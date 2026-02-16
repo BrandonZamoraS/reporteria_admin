@@ -39,3 +39,45 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# local tooling / editor config (not needed for runtime deploy)
+/.agents/
+/.pdfenv/
+/.vscode/
+
+# CI metadata (not needed for runtime deploy)
+/.github/
+
+# docs / design artifacts (not needed for runtime deploy)
+/docs/
+/specs/
+design.pen
+*.pen
+
+# tests (not needed for runtime deploy)
+/tests/
+/test/
+TESTING_*.md
+
+# database / Supabase (keep private)
+/supabase/.temp/
+/supabase/migrations/
+/supabase/seed/
+/supabase/seed.sql
+/supabase/dumps/
+
+# database dumps / local DB files
+*.dump
+*.backup
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+*.sql.gz
