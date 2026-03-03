@@ -2,6 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { logAuditAction } from "@/lib/audit/log";
 import { getCurrentUserProfile } from "@/lib/auth/profile";
 import {
   APP_ROLE_COOKIE,
@@ -84,6 +85,11 @@ export async function loginAction(
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,
+  });
+
+  await logAuditAction(supabase, {
+    action: "LOGIN",
+    description: `Inicio de sesion desde ${userAgent ?? "desconocido"}`,
   });
 
   if (sessionLog?.session_log_id) {

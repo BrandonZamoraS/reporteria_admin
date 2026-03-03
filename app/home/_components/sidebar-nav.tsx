@@ -73,7 +73,7 @@ export function SidebarNav({ role }: { role: AppRole }) {
           alt="Instavista Logo"
           width={48}
           height={48}
-          className="rounded-[8px]"
+          className="h-12 w-auto rounded-[8px]"
         />
         <p className="text-[18px] font-semibold text-foreground">Instavista</p>
       </div>

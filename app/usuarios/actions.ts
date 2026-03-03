@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { logAuditAction } from "@/lib/audit/log";
 import { getCurrentUserProfile } from "@/lib/auth/profile";
 import { isAppRole } from "@/lib/auth/roles";
 import { getSupabaseEnv, getSupabaseServiceRoleKey } from "@/lib/supabase/env";
@@ -505,6 +506,11 @@ export async function updateMyProfileAction(
         success: null,
       };
     }
+
+    await logAuditAction(supabase, {
+      action: "PASSWORD_CHANGE",
+      description: "Cambio de contrasena",
+    });
   }
 
   revalidatePath("/mi-perfil");

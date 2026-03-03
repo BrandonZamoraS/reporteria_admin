@@ -53,6 +53,7 @@ export function ExportReportButton({
   products,
 }: ExportReportButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [mode, setMode] = useState<"pdf" | "excel">("pdf");
 
   const showCompany = useMemo(
     () => role !== "visitante" && shouldShowCompany(reportType),
@@ -71,24 +72,45 @@ export function ExportReportButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="rounded-[8px] bg-foreground px-4 py-2 text-[13px] font-semibold text-white"
-      >
-        Exportar
-      </button>
+      <div className="flex items-center gap-2">
+        {reportType !== "completo" ? (
+          <button
+            type="button"
+            onClick={() => {
+              setMode("pdf");
+              setIsOpen(true);
+            }}
+            className="rounded-[8px] bg-foreground px-3 py-2 text-[13px] font-semibold text-white"
+          >
+            Exportar
+          </button>
+        ) : null}
+        {reportType === "completo" ? (
+          <button
+            type="button"
+            onClick={() => {
+              setMode("excel");
+              setIsOpen(true);
+            }}
+            className="rounded-[8px] bg-foreground px-3 py-2 text-[13px] font-semibold text-white"
+          >
+            Exportar
+          </button>
+        ) : null}
+      </div>
 
       {isOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
           <div className="w-full max-w-2xl rounded-[12px] border border-[var(--border)] bg-white p-4">
-            <h3 className="text-[16px] font-semibold text-foreground">Exportar {reportTitle}</h3>
+            <h3 className="text-[16px] font-semibold text-foreground">
+              Exportar - {reportTitle}
+            </h3>
             <p className="mt-1 text-[13px] text-[var(--muted)]">
-              Configura los parametros para generar el PDF.
+              Configura los parametros para generar el archivo.
             </p>
 
             <form
-              action="/reportes/export"
+              action={mode === "excel" ? "/reportes/export-excel" : "/reportes/export"}
               method="get"
               target="_blank"
               className="mt-3 grid gap-3 md:grid-cols-2"
@@ -231,7 +253,7 @@ export function ExportReportButton({
                   type="submit"
                   className="rounded-[8px] bg-foreground px-4 py-2 text-[13px] font-semibold text-white"
                 >
-                  Generar PDF
+                  Exportar
                 </button>
               </div>
             </form>

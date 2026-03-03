@@ -124,14 +124,14 @@ export default async function ReportsPage() {
               <div className="max-w-3xl">
                 <div className="flex items-center gap-2">
                   <h2 className="text-[14px] font-semibold text-foreground">{definition.title}</h2>
-                  <details className="group">
-                    <summary className="flex h-5 w-5 cursor-pointer list-none items-center justify-center rounded-full border border-[var(--border)] text-[11px] font-bold text-[var(--muted)]">
+                  <div className="group relative">
+                    <span className="flex h-5 w-5 cursor-default items-center justify-center rounded-full border border-[var(--border)] text-[11px] font-bold text-[var(--muted)]">
                       i
-                    </summary>
-                    <p className="mt-2 max-w-xl rounded-[8px] bg-[#F6F7F6] px-3 py-2 text-[12px] text-[var(--muted)]">
-                      {definition.info}
-                    </p>
-                  </details>
+                    </span>
+                    <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-72 -translate-x-1/2 rounded-[8px] border border-[var(--border)] bg-white px-3 py-2 shadow-md group-hover:block">
+                      <p className="text-[12px] text-[var(--muted)]">{definition.info}</p>
+                    </div>
+                  </div>
                 </div>
                 <p className="mt-1 text-[13px] text-[var(--muted)]">{definition.summary}</p>
               </div>

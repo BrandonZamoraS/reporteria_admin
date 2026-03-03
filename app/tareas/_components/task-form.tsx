@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type { TaskFormState } from "@/app/tareas/actions";
 
 type Task = {
@@ -44,10 +44,13 @@ export function TaskForm({
 }: TaskFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_STATE);
   const [userSearch, setUserSearch] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>(selectedUserIds);
+  const searchRef = useRef<HTMLDivElement>(null);
+
   const filteredUsers = useMemo(() => {
     const search = userSearch.trim().toLowerCase();
-    if (!search) return users;
+    if (!search) return [];
     return users.filter((user) => user.name.toLowerCase().includes(search));
   }, [userSearch, users]);
 
@@ -55,6 +58,16 @@ export function TaskForm({
     () => users.filter((user) => selectedIds.includes(user.user_id)),
     [selectedIds, users]
   );
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
     <form action={formAction} className="rounded-[12px] border border-[var(--border)] bg-white p-4">
@@ -121,21 +134,73 @@ export function TaskForm({
           <div className="rounded-t-[12px] bg-[#5A7A84] p-3">
             <p className="text-[16px] font-semibold text-white">Asignar usuarios</p>
 
-            <label className="mt-1 block max-w-[360px]">
+            <div className="mt-1 max-w-[360px]">
               <span className="mb-1.5 block text-[12px] font-semibold text-[#BEBFBF]">
                 Usuarios
               </span>
-              <div className="flex h-10 items-center gap-2 rounded-[8px] border border-[var(--border)] bg-white px-3">
-                <span className="text-[14px] text-[#405C62]">⌕</span>
-                <input
-                  type="text"
-                  value={userSearch}
-                  onChange={(event) => setUserSearch(event.target.value)}
-                  placeholder="Seleccionar usuarios"
-                  className="w-full bg-transparent text-[13px] text-[var(--muted)] outline-none placeholder:text-[#8A9BA7]"
-                />
+              <div ref={searchRef} className="relative">
+                <div className="flex h-10 items-center gap-2 rounded-[8px] border border-[var(--border)] bg-white px-3">
+                  <span className="text-[14px] text-[#405C62]">⌕</span>
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={(event) => {
+                      setUserSearch(event.target.value);
+                      setDropdownOpen(true);
+                    }}
+                    onFocus={() => {
+                      if (userSearch.trim()) setDropdownOpen(true);
+                    }}
+                    placeholder="Buscar usuarios..."
+                    className="w-full bg-transparent text-[13px] text-[var(--muted)] outline-none placeholder:text-[#8A9BA7]"
+                  />
+                  {userSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => { setUserSearch(""); setDropdownOpen(false); }}
+                      className="text-[16px] leading-none text-[#8A9BA7] hover:text-white"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+
+                {dropdownOpen && userSearch.trim() !== "" ? (
+                  <div className="absolute left-0 top-full z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-[8px] border border-[var(--border)] bg-white shadow-md">
+                    {filteredUsers.length === 0 ? (
+                      <p className="px-3 py-2 text-[13px] text-[var(--muted)]">
+                        Sin resultados.
+                      </p>
+                    ) : (
+                      filteredUsers.map((user) => {
+                        const isSelected = selectedIds.includes(user.user_id);
+                        return (
+                          <button
+                            key={user.user_id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedIds((prev) =>
+                                isSelected
+                                  ? prev.filter((id) => id !== user.user_id)
+                                  : [...prev, user.user_id]
+                              );
+                              setUserSearch("");
+                              setDropdownOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between border-b border-[var(--border)] px-3 py-2 text-left last:border-b-0 hover:bg-[#F8FAF8]"
+                          >
+                            <span className="text-[13px] text-foreground">{user.name}</span>
+                            <span className={`text-[12px] font-semibold ${isSelected ? "text-[#9B1C1C]" : "text-[#405C62]"}`}>
+                              {isSelected ? "Quitar" : "Agregar"}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : null}
               </div>
-            </label>
+            </div>
           </div>
 
           {selectedIds.map((id) => (
@@ -143,53 +208,35 @@ export function TaskForm({
           ))}
 
           <div className="px-3">
-            {users.length === 0 ? (
-              <p className="py-3 text-[13px] text-[var(--muted)]">No hay ruteros disponibles.</p>
-            ) : null}
-
-            {users.length > 0 && filteredUsers.length === 0 ? (
+            {selectedUsers.length === 0 ? (
               <p className="py-3 text-[13px] text-[var(--muted)]">
-                No hay usuarios que coincidan con la busqueda.
+                No hay usuarios asignados.
               </p>
-            ) : null}
-
-            {filteredUsers.map((user, index) => {
-              const isSelected = selectedIds.includes(user.user_id);
-              const isLast = index === filteredUsers.length - 1;
-
-              return (
-                <div
-                  key={user.user_id}
-                  className={`flex h-10 items-center justify-between ${
-                    isLast ? "" : "border-b border-[var(--border)]"
-                  }`}
-                >
-                  <p className="text-[13px] text-[var(--muted)]">{user.name}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedIds((prev) =>
-                        isSelected
-                          ? prev.filter((id) => id !== user.user_id)
-                          : [...prev, user.user_id]
-                      );
-                    }}
-                    className="text-[12px] font-semibold text-[var(--muted)]"
+            ) : (
+              selectedUsers.map((user, index) => {
+                const isLast = index === selectedUsers.length - 1;
+                return (
+                  <div
+                    key={user.user_id}
+                    className={`flex h-10 items-center justify-between ${
+                      isLast ? "" : "border-b border-[var(--border)]"
+                    }`}
                   >
-                    {isSelected ? "Quitar" : "Agregar"}
-                  </button>
-                </div>
-              );
-            })}
+                    <p className="text-[13px] text-[var(--muted)]">{user.name}</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedIds((prev) => prev.filter((id) => id !== user.user_id))
+                      }
+                      className="text-[12px] font-semibold text-[#9B1C1C]"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
-
-          {selectedUsers.length > 0 ? (
-            <div className="border-t border-[var(--border)] bg-[#F8FAF8] px-3 py-2">
-              <p className="text-[12px] font-semibold text-[var(--muted)]">
-                Seleccionados: {selectedUsers.map((user) => user.name).join(", ")}
-              </p>
-            </div>
-          ) : null}
         </div>
       </div>
 

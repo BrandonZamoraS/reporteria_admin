@@ -174,9 +174,8 @@ export default async function TasksListPage({ searchParams }: PageProps) {
           </div>
 
           <section className="overflow-hidden rounded-[12px] border border-[var(--border)] bg-white">
-            <div className="hidden bg-[#5A7A84] px-4 py-3 text-[12px] font-semibold text-white md:grid md:grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1fr_1fr] md:gap-3">
+            <div className="hidden bg-[#5A7A84] px-4 py-3 text-[12px] font-semibold text-white md:grid md:grid-cols-[1.2fr_0.9fr_0.8fr_1fr_1fr] md:gap-3">
               <p>Nombre</p>
-              <p>Ruta</p>
               <p>Fecha limite</p>
               <p>Estado</p>
               <p>Asignado a</p>
@@ -199,19 +198,13 @@ export default async function TasksListPage({ searchParams }: PageProps) {
               ? tasks.map((task) => (
                   <article
                     key={task.task_id}
-                    className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_1fr_1fr] md:items-center md:gap-3"
+                    className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[1.2fr_0.9fr_0.8fr_1fr_1fr] md:items-center md:gap-3"
                   >
                     <div>
                       <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">
                         Nombre
                       </p>
                       <p className="text-[13px] text-[var(--muted)]">{task.title}</p>
-                    </div>
-                    <div className="mt-2 md:mt-0">
-                      <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">
-                        Ruta
-                      </p>
-                      <p className="text-[13px] text-[var(--muted)]">-</p>
                     </div>
                     <div className="mt-2 md:mt-0">
                       <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">

@@ -137,7 +137,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
   const currentPage = parsePage(page);
   const from = (currentPage - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
+  const to = from + PAGE_SIZE;
 
   const currentUserProfile = await getCurrentUserProfile(user.id);
   if (!currentUserProfile) {
@@ -194,17 +194,13 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     )
     .order("time_date", { ascending: false });
 
-  let countQuery = supabase.from("check_record").select("record_id", { count: "exact", head: true });
-
   if (role === "rutero") {
     dataQuery = dataQuery.eq("user_id", currentUserProfile.userId);
-    countQuery = countQuery.eq("user_id", currentUserProfile.userId);
   }
 
   if (role === "visitante") {
     if (!visitanteCompanyId) {
       dataQuery = dataQuery.in("product_id", [-1]);
-      countQuery = countQuery.in("product_id", [-1]);
     } else {
       const { data: companyProducts } = await supabase
         .from("product")
@@ -214,10 +210,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
       if (visitorProductIds.length === 0) {
         dataQuery = dataQuery.in("product_id", [-1]);
-        countQuery = countQuery.in("product_id", [-1]);
       } else {
         dataQuery = dataQuery.in("product_id", visitorProductIds);
-        countQuery = countQuery.in("product_id", visitorProductIds);
       }
     }
   }
@@ -233,10 +227,8 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
       if (companyProductIds.length === 0) {
         dataQuery = dataQuery.in("product_id", [-1]);
-        countQuery = countQuery.in("product_id", [-1]);
       } else {
         dataQuery = dataQuery.in("product_id", companyProductIds);
-        countQuery = countQuery.in("product_id", companyProductIds);
       }
     }
   }
@@ -245,20 +237,17 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     const parsedUserId = Number(selectedUserId);
     if (Number.isInteger(parsedUserId) && parsedUserId > 0) {
       dataQuery = dataQuery.eq("user_id", parsedUserId);
-      countQuery = countQuery.eq("user_id", parsedUserId);
     }
   }
 
   if (dateFrom) {
     dataQuery = dataQuery.gte("time_date", `${dateFrom}T00:00:00`);
-    countQuery = countQuery.gte("time_date", `${dateFrom}T00:00:00`);
   }
 
   if (dateTo) {
     const exclusiveEndDate = toExclusiveEndDate(dateTo);
     if (exclusiveEndDate) {
       dataQuery = dataQuery.lt("time_date", `${exclusiveEndDate}T00:00:00`);
-      countQuery = countQuery.lt("time_date", `${exclusiveEndDate}T00:00:00`);
     }
   }
 
@@ -300,18 +289,32 @@ export default async function RecordsPage({ searchParams }: PageProps) {
     }
 
     dataQuery = dataQuery.or(orParts.join(","));
-    countQuery = countQuery.or(orParts.join(","));
   }
 
-  const [{ data: reports, error }, { count, error: countError }] = await Promise.all([
-    dataQuery.range(from, to),
-    countQuery,
-  ]);
+  const reportsRes = await dataQuery.range(from, to);
 
-  const totalCount = count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const reportsWithOverflow = (reportsRes.data ?? []) as ReportRow[];
+  const error = reportsRes.error;
+  if (error) {
+    console.error("Failed to load records", {
+      userId: user.id,
+      role,
+      filters: {
+        q: q ?? "",
+        company: selectedCompany,
+        user: selectedUserId,
+        from: dateFrom,
+        to: dateTo,
+        page: currentPage,
+      },
+      dataError: error,
+    });
+  }
+
+  const hasNextPage = reportsWithOverflow.length > PAGE_SIZE;
+  const reports = hasNextPage ? reportsWithOverflow.slice(0, PAGE_SIZE) : reportsWithOverflow;
   const canGoPrev = currentPage > 1;
-  const canGoNext = currentPage < totalPages;
+  const canGoNext = hasNextPage;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
@@ -362,18 +365,19 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           <p>Comentarios</p>
         </div>
 
-        {error || countError ? (
-          <p className="px-4 py-4 text-[13px] font-medium text-[#9B1C1C]">
-            No se pudieron cargar los registros.
-          </p>
+        {error ? (
+          <div className="px-4 py-4">
+            <p className="text-[13px] font-medium text-[#9B1C1C]">No se pudieron cargar los registros.</p>
+            <p className="mt-1 text-[12px] text-[var(--muted)]">Contacta al administrador si el problema persiste.</p>
+          </div>
         ) : null}
 
-        {!error && !countError && (!reports || reports.length === 0) ? (
+        {!error && reports.length === 0 ? (
           <p className="px-4 py-4 text-[13px] text-[var(--muted)]">No hay registros para mostrar.</p>
         ) : null}
 
-        {!error && !countError && reports?.length
-          ? (reports as ReportRow[]).map((report) => {
+        {!error && reports.length
+          ? reports.map((report) => {
               const productData = takeFirst(report.product);
               const establishmentData = takeFirst(report.establishment);
               const reporterData = takeFirst(report.reporter);
@@ -385,9 +389,10 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                   : null;
 
               return (
-                <article
+                <Link
                   key={report.record_id}
-                  className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1fr_1fr_1.4fr] md:items-center md:gap-3"
+                  href={`/registros/${report.record_id}`}
+                  className="block border-t border-[var(--border)] px-4 py-3 first:border-t-0 hover:bg-[#F8FAF8] md:grid md:grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1fr_1fr_1.4fr] md:items-center md:gap-3"
                 >
                   <div>
                     <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">Fecha</p>
@@ -436,7 +441,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
                     <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">Comentarios</p>
                     <p className="text-[13px] text-[#5A7984]">{report.comments || "-"}</p>
                   </div>
-                </article>
+                </Link>
               );
             })
           : null}
@@ -444,7 +449,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-[12px] text-[var(--muted)]">
-          Mostrando {totalCount === 0 ? 0 : from + 1}-{Math.min(totalCount, to + 1)} de {totalCount}
+          Mostrando {reports.length === 0 ? 0 : from + 1}-{from + reports.length}
         </p>
 
         <div className="flex items-center gap-2">
@@ -462,7 +467,7 @@ export default async function RecordsPage({ searchParams }: PageProps) {
           )}
 
           <span className="text-[12px] font-semibold text-[var(--muted)]">
-            Pagina {Math.min(currentPage, totalPages)} de {totalPages}
+            Pagina {currentPage}
           </span>
 
           {canGoNext ? (

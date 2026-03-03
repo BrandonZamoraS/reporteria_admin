@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { logAuditAction } from "@/lib/audit/log";
 import { APP_ROLE_COOKIE, APP_SESSION_LOG_COOKIE } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -23,6 +24,11 @@ export async function logoutAction() {
       .eq("auth_user_id", user.id)
       .is("logout_at", null);
   }
+
+  await logAuditAction(supabase, {
+    action: "LOGOUT",
+    description: "Cierre de sesion",
+  });
 
   await supabase.auth.signOut();
   cookieStore.delete(APP_ROLE_COOKIE);

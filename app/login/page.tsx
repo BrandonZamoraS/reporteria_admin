@@ -21,7 +21,7 @@ export default function LoginPage() {
             alt="Instavista Logo"
             width={120}
             height={120}
-            className="rounded-[12px]"
+            className="h-[120px] w-auto rounded-[12px]"
           />
           <h1 className="text-center text-[20px] font-semibold text-foreground">
             Instavista Admin
