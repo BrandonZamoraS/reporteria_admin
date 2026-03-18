@@ -1,4 +1,4 @@
-﻿import ExcelJS from "exceljs";
+import ExcelJS from "exceljs";
 import { getUserRoleFromProfile } from "@/lib/auth/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -29,6 +29,8 @@ export async function GET() {
   sheet.columns = [
     { header: "ruta", key: "route", width: 28 },
     { header: "nombre", key: "name", width: 32 },
+    { header: "formato", key: "format", width: 20 },
+    { header: "zona", key: "zone", width: 18 },
     { header: "direccion", key: "direction", width: 40 },
     { header: "provincia", key: "province", width: 20 },
     { header: "canton", key: "canton", width: 20 },
@@ -38,7 +40,7 @@ export async function GET() {
   ];
 
   sheet.insertRow(1, ["Plantilla de carga de establecimientos"]);
-  sheet.mergeCells("A1:H1");
+  sheet.mergeCells("A1:J1");
   sheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFF8FAFC" } };
   sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
   sheet.getCell("A1").fill = {
@@ -49,7 +51,7 @@ export async function GET() {
   sheet.getRow(1).height = 24;
 
   sheet.insertRow(2, ["Completa una fila por establecimiento. La ruta se crea o reutiliza automaticamente."]);
-  sheet.mergeCells("A2:H2");
+  sheet.mergeCells("A2:J2");
   sheet.getCell("A2").font = { italic: true, color: { argb: "FF365B66" } };
   sheet.getCell("A2").alignment = { vertical: "middle" };
   sheet.getCell("A2").fill = {
@@ -70,13 +72,15 @@ export async function GET() {
   sheet.views = [{ state: "frozen", ySplit: 3 }];
 
   sheet.addRow({
-    route: "Ruta Centro",
-    name: "Mini super centro",
-    direction: "100m norte y 25m oeste del parque central",
+    route: "Alajuela",
+    name: "PALI ALAJUELA",
+    format: "Pali",
+    zone: "GAM",
+    direction: "Plaza ferias de Alajuela",
     province: "Alajuela",
-    canton: "Grecia",
-    district: "San Isidro",
-    coordinates: "10.095066203701844, -84.46967131898258",
+    canton: "Alajuela",
+    district: "Alajuela",
+    coordinates: "10.012579937052331, -84.22253955006474",
     status: "Activo",
   });
   sheet.getRow(4).fill = {
@@ -88,6 +92,8 @@ export async function GET() {
   sheet.addRow({
     route: "",
     name: "",
+    format: "",
+    zone: "",
     direction: "",
     province: "",
     canton: "",
@@ -101,7 +107,7 @@ export async function GET() {
     fgColor: { argb: "FFFCFEFE" },
   };
 
-  for (let columnNumber = 1; columnNumber <= 8; columnNumber += 1) {
+  for (let columnNumber = 1; columnNumber <= 10; columnNumber += 1) {
     sheet.getColumn(columnNumber).eachCell((cell) => {
       cell.border = {
         top: { style: "thin", color: { argb: "FFD4E4E7" } },
@@ -125,6 +131,7 @@ export async function GET() {
   notes.getRow(1).height = 22;
   notes.addRow({ note: "Completa solo la hoja Establecimientos." });
   notes.addRow({ note: "La columna ruta es obligatoria. Si no existe, se crea automaticamente." });
+  notes.addRow({ note: "Las columnas formato y zona aceptan texto libre y son opcionales." });
   notes.addRow({
     note: "Las columnas direccion, provincia, canton y distrito son obligatorias para cada establecimiento.",
   });

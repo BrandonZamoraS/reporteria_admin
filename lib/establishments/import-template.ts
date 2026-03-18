@@ -1,4 +1,4 @@
-﻿export type CoordinatePair = {
+export type CoordinatePair = {
   lat: number;
   lng: number;
 };
@@ -12,6 +12,8 @@ export type EstablishmentImportRowInput = {
   rowNumber: number;
   route: string;
   name: string;
+  format: string;
+  zone: string;
   direction: string;
   province: string;
   canton: string;
@@ -23,6 +25,8 @@ export type EstablishmentImportRowInput = {
 export type EstablishmentImportRowData = {
   routeName: string;
   name: string;
+  format: string | null;
+  zone: string | null;
   direction: string;
   province: string;
   canton: string;
@@ -94,6 +98,11 @@ function parseIsActive(rawStatus: string): { value: boolean; error: string | nul
     value: true,
     error: "Estado invalido. Usa activo/inactivo.",
   };
+}
+
+function parseOptionalText(value: string) {
+  const normalized = value.trim();
+  return normalized || null;
 }
 
 export function parseEstablishmentImportRow(
@@ -168,6 +177,8 @@ export function parseEstablishmentImportRow(
     data: {
       routeName,
       name,
+      format: parseOptionalText(input.format),
+      zone: parseOptionalText(input.zone),
       direction,
       province,
       canton,

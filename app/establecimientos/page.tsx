@@ -103,12 +103,12 @@ export default async function EstablishmentsListPage({ searchParams }: PageProps
     ? supabase
         .from("establishment")
         .select(
-          "establishment_id, name, direction, province, canton, district, route_id, is_active, route:route_id(nombre)"
+          "establishment_id, name, format, zone, direction, province, canton, district, route_id, is_active, route:route_id(nombre)"
         )
         .order("establishment_id", { ascending: false })
     : supabase
         .from("establishment")
-        .select("establishment_id, name, direction, province, canton, district, route_id, is_active")
+        .select("establishment_id, name, format, zone, direction, province, canton, district, route_id, is_active")
         .order("establishment_id", { ascending: false });
 
   let countQuery = supabase
@@ -131,17 +131,17 @@ export default async function EstablishmentsListPage({ searchParams }: PageProps
         matchedRouteIds.length > 0 ? `,route_id.in.(${matchedRouteIds.join(",")})` : "";
 
       dataQuery = dataQuery.or(
-        `name.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}${routeFilter}`
+        `name.ilike.${search},format.ilike.${search},zone.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}${routeFilter}`
       );
       countQuery = countQuery.or(
-        `name.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}${routeFilter}`
+        `name.ilike.${search},format.ilike.${search},zone.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}${routeFilter}`
       );
     } else {
       dataQuery = dataQuery.or(
-        `name.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}`
+        `name.ilike.${search},format.ilike.${search},zone.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}`
       );
       countQuery = countQuery.or(
-        `name.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}`
+        `name.ilike.${search},format.ilike.${search},zone.ilike.${search},direction.ilike.${search},province.ilike.${search},canton.ilike.${search},district.ilike.${search}`
       );
     }
   }
@@ -208,9 +208,11 @@ export default async function EstablishmentsListPage({ searchParams }: PageProps
       </div>
 
       <section className="overflow-hidden rounded-[12px] border border-[var(--border)] bg-white">
-        <div className="hidden bg-[#5A7A84] px-4 py-3 text-[12px] font-semibold text-white md:grid md:grid-cols-[1.1fr_1fr_1.6fr_0.7fr_0.9fr] md:gap-3">
+        <div className="hidden bg-[#5A7A84] px-4 py-3 text-[12px] font-semibold text-white md:grid md:grid-cols-[1.1fr_1fr_0.9fr_0.7fr_1.6fr_0.7fr_0.9fr] md:gap-3">
           <p>Nombre</p>
           <p>Ruta</p>
+          <p>Formato</p>
+          <p>Zona</p>
           <p>Direccion</p>
           <p>Estado</p>
           <p>Acciones</p>
@@ -246,7 +248,7 @@ export default async function EstablishmentsListPage({ searchParams }: PageProps
               return (
                 <article
                   key={item.establishment_id}
-                  className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[1.1fr_1fr_1.6fr_0.7fr_0.9fr] md:items-center md:gap-3"
+                  className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[1.1fr_1fr_0.9fr_0.7fr_1.6fr_0.7fr_0.9fr] md:items-center md:gap-3"
                 >
                   <div>
                     <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">Nombre</p>
@@ -256,6 +258,16 @@ export default async function EstablishmentsListPage({ searchParams }: PageProps
                   <div className="mt-2 md:mt-0">
                     <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">Ruta</p>
                     <p className="text-[13px] text-[#5A7984]">{routeName}</p>
+                  </div>
+
+                  <div className="mt-2 md:mt-0">
+                    <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">Formato</p>
+                    <p className="text-[13px] text-[#5A7984]">{item.format ?? "-"}</p>
+                  </div>
+
+                  <div className="mt-2 md:mt-0">
+                    <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">Zona</p>
+                    <p className="text-[13px] text-[#5A7984]">{item.zone ?? "-"}</p>
                   </div>
 
                   <div className="mt-2 md:mt-0">
@@ -350,4 +362,3 @@ export default async function EstablishmentsListPage({ searchParams }: PageProps
     </div>
   );
 }
-

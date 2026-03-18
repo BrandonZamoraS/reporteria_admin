@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
@@ -10,6 +10,8 @@ type EstablishmentRecord = {
   establishment_id: number;
   name: string;
   route_id: number | null;
+  format: string | null;
+  zone: string | null;
   direction: string | null;
   province: string | null;
   canton: string | null;
@@ -152,6 +154,32 @@ export function EstablishmentForm({
               className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
             />
           </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-[12px] font-semibold text-[var(--muted)]">
+                Formato
+              </span>
+              <input
+                name="format"
+                defaultValue={establishment?.format ?? ""}
+                placeholder="Pali, Maxi Pali, Walmart..."
+                className="h-10 w-full rounded-[8px] border border-[var(--border)] px-3 text-[13px] outline-none focus:border-foreground"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-[12px] font-semibold text-[var(--muted)]">
+                Zona
+              </span>
+              <input
+                name="zone"
+                defaultValue={establishment?.zone ?? ""}
+                placeholder="GAM, Occidente, Norte..."
+                className="h-10 w-full rounded-[8px] border border-[var(--border)] px-3 text-[13px] outline-none focus:border-foreground"
+              />
+            </label>
+          </div>
 
           <label className="block">
             <span className="mb-1.5 block text-[12px] font-semibold text-[var(--muted)]">

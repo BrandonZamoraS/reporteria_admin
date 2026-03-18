@@ -21,12 +21,12 @@ export default async function EstablishmentDetailPage({ params }: PageProps) {
     ? supabase
         .from("establishment")
         .select(
-          "establishment_id, name, direction, province, canton, district, lat, lng:long, route_id, is_active, route:route_id(nombre)"
+          "establishment_id, name, format, zone, direction, province, canton, district, lat, lng:long, route_id, is_active, route:route_id(nombre)"
         )
         .eq("establishment_id", parsedEstablishmentId)
     : supabase
         .from("establishment")
-        .select("establishment_id, name, direction, province, canton, district, lat, lng:long, route_id, is_active")
+        .select("establishment_id, name, format, zone, direction, province, canton, district, lat, lng:long, route_id, is_active")
         .eq("establishment_id", parsedEstablishmentId);
 
   const { data: establishment, error } = await establishmentQuery.maybeSingle();
@@ -154,10 +154,22 @@ export default async function EstablishmentDetailPage({ params }: PageProps) {
       </section>
 
       <section className="rounded-[12px] border border-[var(--border)] bg-white p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <article className="rounded-[10px] border border-[var(--border)] bg-[#F8FAF8] p-3">
             <p className="text-[12px] font-semibold text-[var(--muted)]">Ruta</p>
             <p className="mt-1 text-[14px] font-semibold text-foreground">{routeName}</p>
+          </article>
+          <article className="rounded-[10px] border border-[var(--border)] bg-[#F8FAF8] p-3">
+            <p className="text-[12px] font-semibold text-[var(--muted)]">Formato</p>
+            <p className="mt-1 text-[14px] font-semibold text-foreground">
+              {establishment.format || "-"}
+            </p>
+          </article>
+          <article className="rounded-[10px] border border-[var(--border)] bg-[#F8FAF8] p-3">
+            <p className="text-[12px] font-semibold text-[var(--muted)]">Zona</p>
+            <p className="mt-1 text-[14px] font-semibold text-foreground">
+              {establishment.zone || "-"}
+            </p>
           </article>
           <article className="rounded-[10px] border border-[var(--border)] bg-[#F8FAF8] p-3">
             <p className="text-[12px] font-semibold text-[var(--muted)]">Direccion</p>

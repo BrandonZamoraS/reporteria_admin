@@ -1,4 +1,5 @@
 import { ExportReportButton } from "@/app/reportes/_components/export-report-button";
+import { SendCompanyReportsForm } from "@/app/reportes/_components/send-company-reports-form";
 import { requireRole } from "@/lib/auth/require-role";
 import { REPORT_DEFINITIONS, reportsForRole } from "@/lib/reports/types";
 
@@ -7,8 +8,22 @@ type Option = {
   label: string;
 };
 
+type CompanyDeliveryOption = Option & {
+  reportEmails: string[];
+};
+
 function mapCompanyOptions(rows: Array<{ company_id: number; name: string }> | null): Option[] {
   return (rows ?? []).map((row) => ({ id: row.company_id, label: row.name }));
+}
+
+function mapCompanyDeliveryOptions(
+  rows: Array<{ company_id: number; name: string; report_emails: string[] | null }> | null
+): CompanyDeliveryOption[] {
+  return (rows ?? []).map((row) => ({
+    id: row.company_id,
+    label: row.name,
+    reportEmails: Array.isArray(row.report_emails) ? row.report_emails : [],
+  }));
 }
 
 function mapUserOptions(rows: Array<{ user_id: number; name: string }> | null): Option[] {
@@ -39,7 +54,7 @@ export default async function ReportsPage() {
     role === "visitante"
       ? await supabase
           .from("user_profile")
-          .select("company_id, company:company_id(name)")
+          .select("company_id, company:company_id(name, report_emails)")
           .eq("auth_user_id", user.id)
           .maybeSingle()
       : { data: null };
@@ -51,18 +66,31 @@ export default async function ReportsPage() {
 
   const visitanteCompanyData =
     role === "visitante"
-      ? ((ownVisitanteProfile.data?.company as { name?: string } | Array<{ name?: string }> | null) ??
-        null)
+      ? ((
+          ownVisitanteProfile.data?.company as
+            | { name?: string; report_emails?: string[] | null }
+            | Array<{ name?: string; report_emails?: string[] | null }>
+            | null
+        ) ?? null)
       : null;
 
   const visitanteCompanyName = Array.isArray(visitanteCompanyData)
     ? visitanteCompanyData[0]?.name ?? null
     : visitanteCompanyData?.name ?? null;
 
+  const visitanteCompanyReportEmails = Array.isArray(visitanteCompanyData)
+    ? visitanteCompanyData[0]?.report_emails ?? []
+    : visitanteCompanyData?.report_emails ?? [];
+
   const [companiesRes, usersRes, routesRes, establishmentsRes, productsRes] = await Promise.all([
     canSeeAll
-      ? supabase.from("company").select("company_id, name").order("name", { ascending: true })
-      : Promise.resolve({ data: [] as Array<{ company_id: number; name: string }> }),
+      ? supabase
+          .from("company")
+          .select("company_id, name, report_emails")
+          .order("name", { ascending: true })
+      : Promise.resolve({
+          data: [] as Array<{ company_id: number; name: string; report_emails: string[] | null }>,
+        }),
     canSeeAll
       ? supabase
           .from("user_profile")
@@ -89,7 +117,25 @@ export default async function ReportsPage() {
       .order("name", { ascending: true }),
   ]);
 
-  const companyOptions = mapCompanyOptions(companiesRes.data ?? null);
+  const companyOptions = mapCompanyOptions(
+    (companiesRes.data ?? []).map((company) => ({
+      company_id: company.company_id,
+      name: company.name,
+    }))
+  );
+  const deliveryCompanyOptions = canSeeAll
+    ? mapCompanyDeliveryOptions(companiesRes.data ?? null)
+    : visitanteCompanyId
+      ? [
+          {
+            id: visitanteCompanyId,
+            label: visitanteCompanyName ?? "Empresa asignada",
+            reportEmails: Array.isArray(visitanteCompanyReportEmails)
+              ? visitanteCompanyReportEmails
+              : [],
+          },
+        ]
+      : [];
   const userOptions = mapUserOptions(usersRes.data ?? null);
   const routeOptions = mapRouteOptions(routesRes.data ?? null);
   const establishmentOptions = mapEstablishmentOptions(establishmentsRes.data ?? null);
@@ -111,6 +157,15 @@ export default async function ReportsPage() {
             : "No tienes una empresa asignada. Contacta al administrador para habilitar reportes."}
         </div>
       ) : null}
+
+      <SendCompanyReportsForm
+        role={role}
+        companies={deliveryCompanyOptions}
+        routes={routeOptions}
+        establishments={establishmentOptions}
+        products={productOptions}
+        defaultCompanyId={visitanteCompanyId}
+      />
 
       {availableReports.map((reportType) => {
         const definition = REPORT_DEFINITIONS[reportType];

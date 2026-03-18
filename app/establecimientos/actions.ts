@@ -1,8 +1,12 @@
-﻿"use server";
+"use server";
 
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import {
+  chunkItems,
+  filterImportedEstablishmentDuplicates,
+} from "@/lib/establishments/import-batch";
 import { parseEstablishmentImportRow } from "@/lib/establishments/import-template";
 import { getUserRoleFromProfile } from "@/lib/auth/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -27,8 +31,11 @@ type AuthorizedEstablishmentContext =
   | { error: string };
 
 type ImportedEstablishmentRow = {
+  rowNumber: number;
   routeName: string;
   name: string;
+  format: string | null;
+  zone: string | null;
   direction: string;
   province: string;
   canton: string;
@@ -36,6 +43,10 @@ type ImportedEstablishmentRow = {
   lat: number | null;
   long: number | null;
   is_active: boolean;
+};
+
+type ImportedEstablishmentInsertRow = ImportedEstablishmentRow & {
+  route_id: number;
 };
 
 function parseIsActive(value: FormDataEntryValue | null) {
@@ -179,9 +190,12 @@ async function syncEstablishmentProducts(
 }
 
 const IMPORT_ERROR_LIMIT = 12;
+const IMPORT_BATCH_SIZE = 100;
 const TEMPLATE_HEADER_LABELS = [
   "ruta",
   "nombre",
+  "formato",
+  "zona",
   "direccion",
   "provincia",
   "canton",
@@ -305,6 +319,87 @@ async function resolveImportedRouteIds(
   return { ok: true as const, routeIdByName };
 }
 
+async function fetchExistingEstablishmentsForImport(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  routeIds: number[]
+) {
+  if (routeIds.length === 0) {
+    return { ok: true as const, rows: [] as Array<{ route_id: number | null; name: string | null }> };
+  }
+
+  const { data, error } = await supabase
+    .from("establishment")
+    .select("route_id, name")
+    .in("route_id", routeIds);
+
+  if (error) {
+    return {
+      ok: false as const,
+      error: "No se pudieron consultar los establecimientos existentes para validar duplicados.",
+    };
+  }
+
+  return { ok: true as const, rows: data ?? [] };
+}
+
+async function insertImportedEstablishmentBatches(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  rows: ImportedEstablishmentInsertRow[]
+) {
+  let importedCount = 0;
+  const errors: string[] = [];
+
+  for (const batch of chunkItems(rows, IMPORT_BATCH_SIZE)) {
+    const batchPayload = batch.map((row) => ({
+      name: row.name,
+      format: row.format,
+      zone: row.zone,
+      direction: row.direction,
+      province: row.province,
+      canton: row.canton,
+      district: row.district,
+      lat: row.lat,
+      long: row.long,
+      is_active: row.is_active,
+      route_id: row.route_id,
+    }));
+
+    const { error: batchError } = await supabase.from("establishment").insert(batchPayload);
+
+    if (!batchError) {
+      importedCount += batch.length;
+      continue;
+    }
+
+    for (const row of batch) {
+      const { error: rowError } = await supabase.from("establishment").insert({
+        name: row.name,
+        format: row.format,
+        zone: row.zone,
+        direction: row.direction,
+        province: row.province,
+        canton: row.canton,
+        district: row.district,
+        lat: row.lat,
+        long: row.long,
+        is_active: row.is_active,
+        route_id: row.route_id,
+      });
+
+      if (rowError) {
+        errors.push(
+          `Fila ${row.rowNumber}: no se pudo importar "${row.name}" en la ruta "${row.routeName}".`
+        );
+        continue;
+      }
+
+      importedCount += 1;
+    }
+  }
+
+  return { importedCount, errors };
+}
+
 export async function importEstablishmentsTemplateAction(
   _prevState: EstablishmentImportState,
   formData: FormData
@@ -371,14 +466,27 @@ export async function importEstablishmentsTemplateAction(
     const row = sheet.getRow(rowNumber);
     const route = row.getCell(1).text.trim();
     const name = row.getCell(2).text.trim();
-    const direction = row.getCell(3).text.trim();
-    const province = row.getCell(4).text.trim();
-    const canton = row.getCell(5).text.trim();
-    const district = row.getCell(6).text.trim();
-    const coordinates = row.getCell(7).text.trim();
-    const status = row.getCell(8).text.trim();
+    const format = row.getCell(3).text.trim();
+    const zone = row.getCell(4).text.trim();
+    const direction = row.getCell(5).text.trim();
+    const province = row.getCell(6).text.trim();
+    const canton = row.getCell(7).text.trim();
+    const district = row.getCell(8).text.trim();
+    const coordinates = row.getCell(9).text.trim();
+    const status = row.getCell(10).text.trim();
 
-    if (!route && !name && !direction && !province && !canton && !district && !coordinates && !status) {
+    if (
+      !route &&
+      !name &&
+      !format &&
+      !zone &&
+      !direction &&
+      !province &&
+      !canton &&
+      !district &&
+      !coordinates &&
+      !status
+    ) {
       continue;
     }
 
@@ -386,6 +494,8 @@ export async function importEstablishmentsTemplateAction(
       rowNumber,
       route,
       name,
+      format,
+      zone,
       direction,
       province,
       canton,
@@ -400,8 +510,11 @@ export async function importEstablishmentsTemplateAction(
     }
 
     rowsToImport.push({
+      rowNumber,
       routeName: parsed.data.routeName,
       name: parsed.data.name,
+      format: parsed.data.format,
+      zone: parsed.data.zone,
       direction: parsed.data.direction,
       province: parsed.data.province,
       canton: parsed.data.canton,
@@ -436,17 +549,7 @@ export async function importEstablishmentsTemplateAction(
     };
   }
 
-  const rowsToInsert: Array<{
-    name: string;
-    direction: string;
-    province: string;
-    canton: string;
-    district: string;
-    lat: number | null;
-    long: number | null;
-    is_active: boolean;
-    route_id: number;
-  }> = [];
+  const rowsToInsert: ImportedEstablishmentInsertRow[] = [];
   for (const row of rowsToImport) {
     const routeId = resolvedRoutes.routeIdByName.get(row.routeName);
     if (!routeId) {
@@ -458,7 +561,11 @@ export async function importEstablishmentsTemplateAction(
     }
 
     rowsToInsert.push({
+      rowNumber: row.rowNumber,
+      routeName: row.routeName,
       name: row.name,
+      format: row.format,
+      zone: row.zone,
       direction: row.direction,
       province: row.province,
       canton: row.canton,
@@ -470,10 +577,57 @@ export async function importEstablishmentsTemplateAction(
     });
   }
 
-  const { error } = await supabase.from("establishment").insert(rowsToInsert);
-  if (error) {
+  const existingEstablishments = await fetchExistingEstablishmentsForImport(
+    supabase,
+    Array.from(new Set(rowsToInsert.map((row) => row.route_id)))
+  );
+
+  if (!existingEstablishments.ok) {
     return {
-      error: "No se pudo completar la importacion. Intenta nuevamente.",
+      error: existingEstablishments.error,
+      success: null,
+      details: summarizeImportErrors(errors),
+    };
+  }
+
+  const deduplicatedRows = filterImportedEstablishmentDuplicates({
+    rows: rowsToInsert.map((row) => ({
+      rowNumber: row.rowNumber,
+      routeId: row.route_id,
+      routeName: row.routeName,
+      name: row.name,
+    })),
+    existingRows: existingEstablishments.rows
+      .filter(
+        (row): row is { route_id: number; name: string } =>
+          typeof row.route_id === "number" && typeof row.name === "string"
+      )
+      .map((row) => ({ routeId: row.route_id, name: row.name })),
+  });
+
+  errors.push(...deduplicatedRows.errors);
+
+  const rowsByIdentity = new Map(
+    rowsToInsert.map((row) => [`${row.rowNumber}:${row.route_id}:${row.name}`, row] as const)
+  );
+  const finalRowsToInsert = deduplicatedRows.rowsToImport
+    .map((row) => rowsByIdentity.get(`${row.rowNumber}:${row.routeId}:${row.name}`) ?? null)
+    .filter((row): row is ImportedEstablishmentInsertRow => row !== null);
+
+  if (finalRowsToInsert.length === 0) {
+    return {
+      error: "No se importo ningun establecimiento porque todas las filas validas estaban repetidas o fallaron.",
+      success: null,
+      details: summarizeImportErrors(errors),
+    };
+  }
+
+  const insertResult = await insertImportedEstablishmentBatches(supabase, finalRowsToInsert);
+  errors.push(...insertResult.errors);
+
+  if (insertResult.importedCount === 0) {
+    return {
+      error: "No se pudo completar la importacion. Revisa el detalle de filas omitidas.",
       success: null,
       details: summarizeImportErrors(errors),
     };
@@ -481,7 +635,7 @@ export async function importEstablishmentsTemplateAction(
 
   revalidatePath("/establecimientos");
 
-  const importedCount = rowsToInsert.length;
+  const importedCount = insertResult.importedCount;
   const skippedCount = errors.length;
   const success =
     skippedCount > 0
@@ -501,6 +655,8 @@ export async function createEstablishmentAction(
 ): Promise<EstablishmentFormState> {
   const name = String(formData.get("name") ?? "").trim();
   const routeId = parseRouteId(formData.get("routeId"));
+  const format = String(formData.get("format") ?? "").trim() || null;
+  const zone = String(formData.get("zone") ?? "").trim() || null;
   const direction = String(formData.get("direction") ?? "").trim();
   const province = String(formData.get("province") ?? "").trim();
   const canton = String(formData.get("canton") ?? "").trim();
@@ -550,6 +706,8 @@ export async function createEstablishmentAction(
     .insert({
       name,
       route_id: routeId,
+      format,
+      zone,
       direction,
       province,
       canton,
@@ -582,6 +740,8 @@ export async function updateEstablishmentAction(
   const establishmentId = Number(formData.get("establishmentId"));
   const name = String(formData.get("name") ?? "").trim();
   const routeId = parseRouteId(formData.get("routeId"));
+  const format = String(formData.get("format") ?? "").trim() || null;
+  const zone = String(formData.get("zone") ?? "").trim() || null;
   const direction = String(formData.get("direction") ?? "").trim();
   const province = String(formData.get("province") ?? "").trim();
   const canton = String(formData.get("canton") ?? "").trim();
@@ -635,6 +795,8 @@ export async function updateEstablishmentAction(
     .update({
       name,
       route_id: routeId,
+      format,
+      zone,
       direction,
       province,
       canton,

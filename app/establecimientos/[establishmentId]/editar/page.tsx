@@ -25,7 +25,7 @@ export default async function EditEstablishmentPage({ params }: PageProps) {
     supabase
       .from("establishment")
       .select(
-        "establishment_id, name, route_id, direction, province, canton, district, lat, lng:long, is_active"
+        "establishment_id, name, route_id, format, zone, direction, province, canton, district, lat, lng:long, is_active"
       )
       .eq("establishment_id", parsedEstablishmentId)
       .maybeSingle(),
