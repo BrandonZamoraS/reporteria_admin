@@ -73,7 +73,7 @@ export function SidebarNav({ role }: { role: AppRole }) {
     <div className={`${navClasses} flex h-full flex-col overflow-x-hidden`}>
       <div className="flex h-14 items-center gap-3">
         <Image
-          src="/logo.png"
+          src="/logo-hm.webp"
           alt="Instavista Logo"
           width={48}
           height={48}

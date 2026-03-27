@@ -43,7 +43,7 @@ function LoginContent() {
       <section className="w-full max-w-[420px] rounded-[12px] border border-[var(--border)] bg-surface p-6">
         <div className="flex flex-col items-center gap-4">
           <Image
-            src="/logo.png"
+            src="/logo-hm.webp"
             alt="Instavista Logo"
             width={120}
             height={120}
