@@ -14,6 +14,7 @@ type SearchableComboboxProps<TItem> = {
   error?: string | null;
   disabled?: boolean;
   className?: string;
+  fieldClassName?: string;
   listClassName?: string;
   inputClassName?: string;
   clearOnSelect?: boolean;
@@ -34,6 +35,7 @@ export function SearchableCombobox<TItem>({
   error = null,
   disabled = false,
   className,
+  fieldClassName,
   listClassName,
   inputClassName,
   clearOnSelect = true,
@@ -93,11 +95,14 @@ export function SearchableCombobox<TItem>({
   };
 
   return (
-    <div ref={rootRef} className={className}>
+    <div
+      ref={rootRef}
+      className={`relative ${className ?? ""}`.trim()}
+    >
       <div
         className={`flex h-10 items-center gap-2 rounded-[8px] border border-[var(--border)] bg-white px-3 ${
           disabled ? "opacity-70" : ""
-        }`}
+        } ${fieldClassName ?? ""}`.trim()}
       >
         <span className="text-[14px] text-[#405C62]">⌕</span>
         <input
@@ -181,9 +186,9 @@ export function SearchableCombobox<TItem>({
 
       {shouldShowList ? (
         <div
-          className={`mt-1 max-h-48 overflow-y-auto rounded-[8px] border border-[var(--border)] bg-white shadow-md ${
+          className={`absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-[8px] border border-[var(--border)] bg-white shadow-md ${
             listClassName ?? ""
-          }`}
+          }`.trim()}
           role="listbox"
           id={listId}
         >

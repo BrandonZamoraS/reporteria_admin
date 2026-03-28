@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { ESTABLISHMENT_TEMPLATE_COLUMNS } from "@/lib/establishments/import-sheet";
 import { getUserRoleFromProfile } from "@/lib/auth/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -26,21 +27,10 @@ export async function GET() {
   workbook.company = "reporteria_admin";
 
   const sheet = workbook.addWorksheet("Establecimientos");
-  sheet.columns = [
-    { header: "ruta", key: "route", width: 28 },
-    { header: "nombre", key: "name", width: 32 },
-    { header: "formato", key: "format", width: 20 },
-    { header: "zona", key: "zone", width: 18 },
-    { header: "direccion", key: "direction", width: 40 },
-    { header: "provincia", key: "province", width: 20 },
-    { header: "canton", key: "canton", width: 20 },
-    { header: "distrito", key: "district", width: 20 },
-    { header: "coordenadas", key: "coordinates", width: 40 },
-    { header: "estado", key: "status", width: 14 },
-  ];
+  sheet.columns = ESTABLISHMENT_TEMPLATE_COLUMNS.map((column) => ({ ...column }));
 
   sheet.insertRow(1, ["Plantilla de carga de establecimientos"]);
-  sheet.mergeCells("A1:J1");
+  sheet.mergeCells("A1:K1");
   sheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFF8FAFC" } };
   sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
   sheet.getCell("A1").fill = {
@@ -51,7 +41,7 @@ export async function GET() {
   sheet.getRow(1).height = 24;
 
   sheet.insertRow(2, ["Completa una fila por establecimiento. La ruta se crea o reutiliza automaticamente."]);
-  sheet.mergeCells("A2:J2");
+  sheet.mergeCells("A2:K2");
   sheet.getCell("A2").font = { italic: true, color: { argb: "FF365B66" } };
   sheet.getCell("A2").alignment = { vertical: "middle" };
   sheet.getCell("A2").fill = {
@@ -72,6 +62,7 @@ export async function GET() {
   sheet.views = [{ state: "frozen", ySplit: 3 }];
 
   sheet.addRow({
+    routeId: "",
     route: "Alajuela",
     name: "PALI ALAJUELA",
     format: "Pali",
@@ -90,6 +81,7 @@ export async function GET() {
   };
 
   sheet.addRow({
+    routeId: "",
     route: "",
     name: "",
     format: "",
@@ -107,7 +99,7 @@ export async function GET() {
     fgColor: { argb: "FFFCFEFE" },
   };
 
-  for (let columnNumber = 1; columnNumber <= 10; columnNumber += 1) {
+  for (let columnNumber = 1; columnNumber <= ESTABLISHMENT_TEMPLATE_COLUMNS.length; columnNumber += 1) {
     sheet.getColumn(columnNumber).eachCell((cell) => {
       cell.border = {
         top: { style: "thin", color: { argb: "FFD4E4E7" } },
@@ -130,7 +122,12 @@ export async function GET() {
   };
   notes.getRow(1).height = 22;
   notes.addRow({ note: "Completa solo la hoja Establecimientos." });
-  notes.addRow({ note: "La columna ruta es obligatoria. Si no existe, se crea automaticamente." });
+  notes.addRow({
+    note: "La columna id es opcional y se ignora durante la importacion; puedes dejarla vacia.",
+  });
+  notes.addRow({
+    note: "La columna nombre de ruta es obligatoria. Si no existe, se crea automaticamente.",
+  });
   notes.addRow({ note: "Las columnas formato y zona aceptan texto libre y son opcionales." });
   notes.addRow({
     note: "Las columnas direccion, provincia, canton y distrito son obligatorias para cada establecimiento.",

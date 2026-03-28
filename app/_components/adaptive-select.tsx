@@ -80,7 +80,7 @@ export function AdaptiveSelect({
   }
 
   return (
-    <div className="space-y-0.5">
+    <div className="relative space-y-0.5">
       {name ? (
         <input
           type="text"
@@ -104,7 +104,7 @@ export function AdaptiveSelect({
         placeholder={placeholder}
         emptyMessage={emptyMessage}
         disabled={disabled}
-        className={className}
+        fieldClassName={className}
         clearOnSelect={false}
         onClear={() => {
           handleValueChange("");

@@ -7,6 +7,7 @@ import {
   chunkItems,
   filterImportedEstablishmentDuplicates,
 } from "@/lib/establishments/import-batch";
+import { findEstablishmentTemplateHeaderRow } from "@/lib/establishments/import-sheet";
 import { parseEstablishmentImportRow } from "@/lib/establishments/import-template";
 import { getUserRoleFromProfile } from "@/lib/auth/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -191,6 +192,7 @@ async function syncEstablishmentProducts(
 
 const IMPORT_ERROR_LIMIT = 12;
 const IMPORT_BATCH_SIZE = 100;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TEMPLATE_HEADER_ALIASES = {
   route: ["ruta", "route", "ruta asignada"],
   name: ["nombre", "establecimiento", "nombre del establecimiento"],
@@ -213,8 +215,10 @@ const TEMPLATE_HEADER_ALIASES = {
 
 type TemplateColumnKey = keyof typeof TEMPLATE_HEADER_ALIASES;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type TemplateColumnMap = Record<TemplateColumnKey, number>;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function normalizeHeaderCell(value: string) {
   return value
     .normalize("NFD")
@@ -255,34 +259,6 @@ function summarizeImportErrors(errors: string[]) {
   if (errors.length <= IMPORT_ERROR_LIMIT) return errors;
   const omitted = errors.length - IMPORT_ERROR_LIMIT;
   return [...errors.slice(0, IMPORT_ERROR_LIMIT), `... y ${omitted} error(es) adicional(es).`];
-}
-
-function findTemplateHeaderRow(sheet: ExcelJS.Worksheet) {
-  for (let rowNumber = 1; rowNumber <= Math.min(sheet.rowCount, 20); rowNumber += 1) {
-    const row = sheet.getRow(rowNumber);
-    const headerMap = {} as Partial<TemplateColumnMap>;
-
-    for (let cellNumber = 1; cellNumber <= row.cellCount; cellNumber += 1) {
-      const normalizedValue = normalizeHeaderCell(row.getCell(cellNumber).text);
-      if (!normalizedValue) continue;
-
-      const matchedEntry = (Object.entries(TEMPLATE_HEADER_ALIASES) as Array<
-        [TemplateColumnKey, readonly string[]]
-      >).find(([, aliases]) =>
-        aliases.some((alias) => normalizedValue === alias || normalizedValue.includes(alias))
-      );
-
-      if (matchedEntry && !headerMap[matchedEntry[0]]) {
-        headerMap[matchedEntry[0]] = cellNumber;
-      }
-    }
-
-    if ((Object.keys(TEMPLATE_HEADER_ALIASES) as TemplateColumnKey[]).every((key) => headerMap[key])) {
-      return { rowNumber, columns: headerMap as TemplateColumnMap };
-    }
-  }
-
-  return null;
 }
 
 async function resolveImportedRouteIds(
@@ -497,13 +473,13 @@ export async function importEstablishmentsTemplateAction(
     };
   }
 
-  const headerDefinition = findTemplateHeaderRow(sheet);
+  const headerDefinition = findEstablishmentTemplateHeaderRow(sheet);
   if (!headerDefinition) {
     return {
       error: "No se encontro la fila de encabezados esperada en el archivo Excel.",
       success: null,
       details: [
-        "Asegurate de incluir columnas para ruta, nombre, direccion, provincia, canton, distrito, coordenadas y estado.",
+        "Asegurate de incluir columnas para nombre de ruta, nombre(establecimiento), direccion, provincia, canton, distrito, coordenadas y estado.",
       ],
     };
   }
