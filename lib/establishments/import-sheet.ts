@@ -110,10 +110,28 @@ export function findEstablishmentTemplateHeaderRow(sheet: ExcelJS.Worksheet) {
   }
 
   // Fallback a los valores viejos si no encontró nada que se parezca.
-  const fallbackHeaderRow = sheet.getRow(FIXED_TEMPLATE_HEADER_ROW);
-  if (!fallbackHeaderRow.hasValues) {
-    return null;
-  }
+  const headerRow = sheet.getRow(FIXED_TEMPLATE_HEADER_ROW);
+  const expectedHeadersByColumn: Record<number, string> = {
+    [FIXED_TEMPLATE_COLUMNS.route]: "nombre de ruta",
+    [FIXED_TEMPLATE_COLUMNS.name]: "nombre(establecimiento)",
+    [FIXED_TEMPLATE_COLUMNS.format]: "formato",
+    [FIXED_TEMPLATE_COLUMNS.zone]: "zona",
+    [FIXED_TEMPLATE_COLUMNS.direction]: "direccion",
+    [FIXED_TEMPLATE_COLUMNS.province]: "provincia",
+    [FIXED_TEMPLATE_COLUMNS.canton]: "canton",
+    [FIXED_TEMPLATE_COLUMNS.district]: "distrito",
+    [FIXED_TEMPLATE_COLUMNS.coordinates]: "coordenadas",
+    [FIXED_TEMPLATE_COLUMNS.status]: "estado",
+  };
+
+  const hasAllFixedHeaders = Object.entries(expectedHeadersByColumn).every(
+    ([columnNumber, expectedHeader]) => {
+      const value = normalizeTemplateHeaderCell(headerRow.getCell(Number(columnNumber)).text);
+      return value === normalizeTemplateHeaderCell(expectedHeader);
+    },
+  );
+
+  if (!hasAllFixedHeaders) return null;
 
   return {
     rowNumber: FIXED_TEMPLATE_HEADER_ROW,
