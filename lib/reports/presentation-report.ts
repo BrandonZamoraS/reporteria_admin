@@ -31,6 +31,18 @@ export type PresentationPage = {
   establishments: PresentationPageEstablishment[];
 };
 
+export type PresentationRecordGroup = {
+  recordId: number;
+  recordSequence: number;
+  showRecordSummary: boolean;
+  establishmentName: string | null;
+  timeDate: string;
+  comments: string | null;
+  systemInventory: number | null;
+  realInventory: number | null;
+  photos: PresentationPhotoCard[];
+};
+
 type BuildPresentationReportPdfOptions = {
   title: string;
   generatedAtIso: string;
@@ -139,6 +151,32 @@ function flattenPresentationPage(page: PresentationPage) {
   return page.establishments.flatMap((establishment) => establishment.cards);
 }
 
+export function groupPresentationCardsByRecord(cards: PresentationPhotoCard[]): PresentationRecordGroup[] {
+  const groups: PresentationRecordGroup[] = [];
+
+  for (const card of cards) {
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup.recordId === card.recordId) {
+      lastGroup.photos.push(card);
+      continue;
+    }
+
+    groups.push({
+      recordId: card.recordId,
+      recordSequence: card.recordSequence,
+      showRecordSummary: card.showRecordSummary,
+      establishmentName: card.establishmentName,
+      timeDate: card.timeDate,
+      comments: card.comments,
+      systemInventory: card.systemInventory,
+      realInventory: card.realInventory,
+      photos: [card],
+    });
+  }
+
+  return groups;
+}
+
 function drawCardText(
   doc: PDFKit.PDFDocument,
   text: string,
@@ -218,54 +256,59 @@ function drawCover(doc: PDFKit.PDFDocument, cards: PresentationPhotoCard[], opti
 
 }
 
-async function drawPresentationCard(params: {
+async function drawPresentationGroup(params: {
   doc: PDFKit.PDFDocument;
-  card: PresentationPhotoCard;
+  group: PresentationRecordGroup;
   x: number;
   y: number;
   width: number;
   height: number;
 }) {
-  const { doc, card, x, y, width, height } = params;
+  const { doc, group, x, y, width, height } = params;
   const padding = 10;
-  const summaryHeight = card.showRecordSummary ? 42 : 18;
+  const summaryHeight = group.showRecordSummary ? 42 : 18;
   const imageAreaY = y + 56 + summaryHeight;
   const imageHeight = Math.max(72, height - (imageAreaY - y) - 34);
-  const prepared = await preparePresentationImage(card);
+  const imageAreaWidth = width - padding * 2;
+  const imageGrid = resolvePageGrid(group.photos.length);
+  const imageGap = 4;
+  const slotWidth = (imageAreaWidth - imageGap * (imageGrid.columns - 1)) / imageGrid.columns;
+  const slotHeight = (imageHeight - imageGap * (imageGrid.rows - 1)) / imageGrid.rows;
+  const preparedImages = await Promise.all(group.photos.map((photo) => preparePresentationImage(photo)));
 
   doc.roundedRect(x, y, width, height, 12).fillAndStroke("#FFFFFF", "#D7DFDA");
   doc.roundedRect(x + padding, y + padding, width - padding * 2, 20, 10).fill("#E8EFEA");
 
-  drawCardText(doc, limitText(normalizeEstablishmentName(card.establishmentName), 42), x + padding + 8, y + padding + 4, width - 36, {
+  drawCardText(doc, limitText(normalizeEstablishmentName(group.establishmentName), 42), x + padding + 8, y + padding + 4, width - 36, {
     font: "Helvetica-Bold",
     size: 10,
     color: "#0D3233",
     lineBreak: false,
   });
 
-  drawCardText(doc, `Registro ${card.recordSequence}`, x + padding, y + 36, width * 0.3, {
+  drawCardText(doc, `Registro ${group.recordSequence}`, x + padding, y + 36, width * 0.3, {
     font: "Helvetica-Bold",
     size: 9,
     color: "#102A43",
     lineBreak: false,
   });
-  drawCardText(doc, formatDateTime(card.timeDate), x + width * 0.32, y + 36, width * 0.58 - padding, {
+  drawCardText(doc, formatDateTime(group.timeDate), x + width * 0.32, y + 36, width * 0.58 - padding, {
     size: 9,
     color: "#486581",
     align: "right",
     lineBreak: false,
   });
 
-  if (card.showRecordSummary) {
+  if (group.showRecordSummary) {
     drawCardText(
       doc,
-      `Fisico: ${formatInventory(card.realInventory)}   Sistema: ${formatInventory(card.systemInventory)}`,
+      `Fisico: ${formatInventory(group.realInventory)}   Sistema: ${formatInventory(group.systemInventory)}`,
       x + padding,
       y + 52,
       width - padding * 2,
       { size: 8.5, color: "#486581", lineBreak: false }
     );
-    drawCardText(doc, limitText(card.comments, 72), x + padding, y + 66, width - padding * 2, {
+    drawCardText(doc, limitText(group.comments, 72), x + padding, y + 66, width - padding * 2, {
       size: 8,
       color: "#334E68",
       lineBreak: false,
@@ -279,23 +322,33 @@ async function drawPresentationCard(params: {
     });
   }
 
-  if (prepared.imageBuffer) {
-    doc.image(prepared.imageBuffer, x + padding, imageAreaY, {
-      fit: [width - padding * 2, imageHeight],
-      align: "center",
-      valign: "center",
-    });
-  } else {
-    doc.roundedRect(x + padding, imageAreaY, width - padding * 2, imageHeight, 8).fill("#EEF2EE");
-    drawCardText(doc, "No se pudo cargar la imagen", x + padding + 12, imageAreaY + imageHeight / 2 - 8, width - padding * 2 - 24, {
-      font: "Helvetica-Bold",
-      size: 11,
-      color: "#5A7984",
-      align: "center",
-    });
+  doc.roundedRect(x + padding, imageAreaY, imageAreaWidth, imageHeight, 8).fill("#F4F7F4");
+
+  for (const [index, prepared] of preparedImages.entries()) {
+    const column = index % imageGrid.columns;
+    const row = Math.floor(index / imageGrid.columns);
+    const slotX = x + padding + column * (slotWidth + imageGap);
+    const slotY = imageAreaY + row * (slotHeight + imageGap);
+
+    doc.roundedRect(slotX, slotY, slotWidth, slotHeight, 6).fill("#EEF2EE");
+
+    if (prepared.imageBuffer) {
+      doc.image(prepared.imageBuffer, slotX, slotY, {
+        fit: [slotWidth, slotHeight],
+        align: "center",
+        valign: "center",
+      });
+    } else {
+      drawCardText(doc, "No se pudo cargar la imagen", slotX + 12, slotY + slotHeight / 2 - 8, slotWidth - 24, {
+        font: "Helvetica-Bold",
+        size: 11,
+        color: "#5A7984",
+        align: "center",
+      });
+    }
   }
 
-  drawCardText(doc, "Evidencia fotografica", x + padding, y + height - 24, width - padding * 2, {
+  drawCardText(doc, `${group.photos.length} evidencia${group.photos.length === 1 ? "" : "s"} fotografica${group.photos.length === 1 ? "" : "s"}`, x + padding, y + height - 24, width - padding * 2, {
     font: "Helvetica-Bold",
     size: 8,
     color: "#5A7984",
@@ -318,7 +371,8 @@ async function drawPresentationPage(
   const contentTop = top + headerHeight + 14;
   const contentHeight = usableHeight - headerHeight - 14;
   const cards = flattenPresentationPage(page);
-  const grid = resolvePageGrid(cards.length);
+  const groups = groupPresentationCardsByRecord(cards);
+  const grid = resolvePageGrid(groups.length);
   const gap = 12;
   const cardWidth = (usableWidth - gap * (grid.columns - 1)) / grid.columns;
   const cardHeight = (contentHeight - gap * (grid.rows - 1)) / grid.rows;
@@ -336,15 +390,15 @@ async function drawPresentationPage(
     align: "right",
   });
 
-  for (const [index, card] of cards.entries()) {
+  for (const [index, group] of groups.entries()) {
     const column = index % grid.columns;
     const row = Math.floor(index / grid.columns);
     const x = left + column * (cardWidth + gap);
     const y = contentTop + row * (cardHeight + gap);
 
-    await drawPresentationCard({
+    await drawPresentationGroup({
       doc,
-      card,
+      group,
       x,
       y,
       width: cardWidth,
