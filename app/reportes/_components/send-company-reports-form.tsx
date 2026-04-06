@@ -18,6 +18,10 @@ type CompanyOption = Option & {
   reportEmails: string[];
 };
 
+type ProductOption = Option & {
+  companyId: number | null;
+};
+
 type DraftRequest = {
   id: string;
   type: "completo" | "ajustes";
@@ -33,7 +37,7 @@ type SendCompanyReportsFormProps = {
   companies: CompanyOption[];
   routes: Option[];
   establishments: Option[];
-  products: Option[];
+  products: ProductOption[];
   defaultCompanyId: number | null;
 };
 
@@ -127,14 +131,12 @@ export function SendCompanyReportsForm({
     [establishments]
   );
 
-  const productOptions = useMemo(
-    () =>
-      products.map((product) => ({
-        value: String(product.id),
-        label: product.label,
-      })),
-    [products]
-  );
+  const productOptions = useMemo(() => {
+    const filtered = companyId
+      ? products.filter((p) => p.companyId === Number(companyId))
+      : products;
+    return filtered.map((product) => ({ value: String(product.id), label: product.label }));
+  }, [products, companyId]);
 
   const updateRequest = (requestId: string, nextValue: Partial<DraftRequest>) => {
     setRequests((current) =>
@@ -166,6 +168,9 @@ export function SendCompanyReportsForm({
   const handleCompanyChange = (value: string) => {
     setCompanyId(value);
     setSelectedReportEmails([]);
+    setRequests((current) =>
+      current.map((request) => ({ ...request, productId: "", establishmentId: "" }))
+    );
   };
 
   return (

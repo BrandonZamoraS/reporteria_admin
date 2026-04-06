@@ -10,6 +10,10 @@ type Option = {
   label: string;
 };
 
+type ProductOption = Option & {
+  companyId: number | null;
+};
+
 type ExportReportButtonProps = {
   role: AppRole;
   reportType: ReportType;
@@ -19,7 +23,7 @@ type ExportReportButtonProps = {
   users: Option[];
   routes: Option[];
   establishments: Option[];
-  products: Option[];
+  products: ProductOption[];
 };
 
 function shouldShowUser(reportType: ReportType) {
@@ -55,6 +59,9 @@ export function ExportReportButton({
 }: ExportReportButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<"pdf" | "excel">("pdf");
+  const [selectedCompanyId, setSelectedCompanyId] = useState(
+    defaultCompanyId ? String(defaultCompanyId) : ""
+  );
 
   const showCompany = useMemo(
     () => role !== "visitante" && shouldShowCompany(reportType),
@@ -71,6 +78,13 @@ export function ExportReportButton({
   const showProduct = useMemo(() => shouldShowProduct(reportType), [reportType]);
   const showEstablishment = useMemo(() => shouldShowEstablishment(reportType), [reportType]);
 
+  const filteredProductOptions = useMemo(() => {
+    const filtered = selectedCompanyId
+      ? products.filter((p) => p.companyId === Number(selectedCompanyId))
+      : products;
+    return filtered.map((p) => ({ value: String(p.id), label: p.label }));
+  }, [products, selectedCompanyId]);
+
   return (
     <>
       <div className="flex items-center gap-2">
@@ -79,6 +93,7 @@ export function ExportReportButton({
             type="button"
             onClick={() => {
               setMode("pdf");
+              setSelectedCompanyId(defaultCompanyId ? String(defaultCompanyId) : "");
               setIsOpen(true);
             }}
             className="rounded-[8px] bg-foreground px-3 py-2 text-[13px] font-semibold text-white"
@@ -91,6 +106,7 @@ export function ExportReportButton({
             type="button"
             onClick={() => {
               setMode("excel");
+              setSelectedCompanyId(defaultCompanyId ? String(defaultCompanyId) : "");
               setIsOpen(true);
             }}
             className="rounded-[8px] bg-foreground px-3 py-2 text-[13px] font-semibold text-white"
@@ -131,6 +147,8 @@ export function ExportReportButton({
                   </span>
                   <AdaptiveSelect
                     name="companyId"
+                    value={selectedCompanyId}
+                    onValueChange={(value) => setSelectedCompanyId(value)}
                     emptyOptionLabel="Todas"
                     placeholder="Buscar empresa"
                     options={companies.map((option) => ({
@@ -205,10 +223,7 @@ export function ExportReportButton({
                     name="productId"
                     emptyOptionLabel="Todos"
                     placeholder="Buscar producto"
-                    options={products.map((option) => ({
-                      value: String(option.id),
-                      label: option.label,
-                    }))}
+                    options={filteredProductOptions}
                     className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
                   />
                 </label>

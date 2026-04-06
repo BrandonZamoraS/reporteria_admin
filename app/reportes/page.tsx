@@ -40,8 +40,12 @@ function mapEstablishmentOptions(
   return (rows ?? []).map((row) => ({ id: row.establishment_id, label: row.name }));
 }
 
-function mapProductOptions(rows: Array<{ product_id: number; name: string; sku: string }> | null): Option[] {
-  return (rows ?? []).map((row) => ({ id: row.product_id, label: `${row.name} (${row.sku})` }));
+type ProductOption = Option & {
+  companyId: number | null;
+};
+
+function mapProductOptions(rows: Array<{ product_id: number; name: string; sku: string; company_id: number | null }> | null): ProductOption[] {
+  return (rows ?? []).map((row) => ({ id: row.product_id, label: `${row.name} (${row.sku})`, companyId: row.company_id ?? null }));
 }
 
 export default async function ReportsPage() {
@@ -112,7 +116,7 @@ export default async function ReportsPage() {
       .order("name", { ascending: true }),
     supabase
       .from("product")
-      .select("product_id, name, sku")
+      .select("product_id, name, sku, company_id")
       .eq("is_active", true)
       .order("name", { ascending: true }),
   ]);
@@ -139,7 +143,7 @@ export default async function ReportsPage() {
   const userOptions = mapUserOptions(usersRes.data ?? null);
   const routeOptions = mapRouteOptions(routesRes.data ?? null);
   const establishmentOptions = mapEstablishmentOptions(establishmentsRes.data ?? null);
-  const productOptions = mapProductOptions(productsRes.data ?? null);
+  const productOptions: ProductOption[] = mapProductOptions(productsRes.data ?? null);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
