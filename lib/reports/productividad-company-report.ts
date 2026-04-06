@@ -1,6 +1,8 @@
 import type { FlatRow } from "@/lib/reports/export-core";
 
 export type CompanyProductividadScopeEstablishment = {
+  companyId: number | null;
+  companyName: string;
   routeId: number;
   establishmentId: number;
 };
@@ -26,6 +28,7 @@ export type CompanyProductividadSummary = {
   totalVisitedEstablishments: number;
   totalRoutesInScope: number;
   totalScopedEstablishments: number;
+  totalGeneralEstablishments: number;
   totalCompletedRouteEstablishments: number;
   overallCompletionRate: number | null;
   companies: CompanyProductividadCompanySummary[];
@@ -37,21 +40,19 @@ type CompanyAccumulator = {
   totalRecords: number;
   days: Set<string>;
   visitedEstablishments: Set<number>;
-  routeIds: Set<number>;
 };
 
-function buildCompanyKey(row: FlatRow) {
-  return `${row.companyId ?? "none"}::${row.companyName ?? "Sin empresa"}`;
+function buildCompanyKey(companyId: number | null, companyName: string | null) {
+  return `${companyId ?? "none"}::${companyName ?? "Sin empresa"}`;
 }
 
-function createCompanyAccumulator(row: FlatRow): CompanyAccumulator {
+function createCompanyAccumulator(companyId: number | null, companyName: string | null): CompanyAccumulator {
   return {
-    companyId: row.companyId,
-    companyName: row.companyName ?? "Sin empresa",
+    companyId,
+    companyName: companyName ?? "Sin empresa",
     totalRecords: 0,
     days: new Set<string>(),
     visitedEstablishments: new Set<number>(),
-    routeIds: new Set<number>(),
   };
 }
 
@@ -63,10 +64,31 @@ export function buildCompanyProductividadSummary(
   const globalDays = new Set<string>();
   const globalVisitedEstablishments = new Set<number>();
   const globalRoutes = new Set<number>();
+  const globalScopedEstablishments = new Set<string>();
+  const routeIdsByCompany = new Map<string, Set<number>>();
+  const establishmentIdsByCompany = new Map<string, Set<number>>();
+
+  for (const item of scopedEstablishments) {
+    const key = buildCompanyKey(item.companyId, item.companyName);
+    if (!byCompany.has(key)) {
+      byCompany.set(key, createCompanyAccumulator(item.companyId, item.companyName));
+    }
+
+    const routes = routeIdsByCompany.get(key) ?? new Set<number>();
+    routes.add(item.routeId);
+    routeIdsByCompany.set(key, routes);
+
+    const establishments = establishmentIdsByCompany.get(key) ?? new Set<number>();
+    establishments.add(item.establishmentId);
+    establishmentIdsByCompany.set(key, establishments);
+
+    globalRoutes.add(item.routeId);
+    globalScopedEstablishments.add(`${item.companyId ?? "none"}:${item.establishmentId}`);
+  }
 
   for (const row of rows) {
-    const key = buildCompanyKey(row);
-    const current = byCompany.get(key) ?? createCompanyAccumulator(row);
+    const key = buildCompanyKey(row.companyId, row.companyName);
+    const current = byCompany.get(key) ?? createCompanyAccumulator(row.companyId, row.companyName);
     const day = row.timeDate.slice(0, 10);
 
     current.totalRecords += 1;
@@ -78,40 +100,22 @@ export function buildCompanyProductividadSummary(
       globalVisitedEstablishments.add(row.establishmentId);
     }
 
-    if (typeof row.routeId === "number") {
-      current.routeIds.add(row.routeId);
-      globalRoutes.add(row.routeId);
-    }
-
     byCompany.set(key, current);
   }
 
-  const establishmentIdsByRoute = new Map<number, Set<number>>();
-  for (const item of scopedEstablishments) {
-    const bucket = establishmentIdsByRoute.get(item.routeId) ?? new Set<number>();
-    bucket.add(item.establishmentId);
-    establishmentIdsByRoute.set(item.routeId, bucket);
-  }
-
-  const companies = [...byCompany.values()]
-    .map<CompanyProductividadCompanySummary>((item) => {
-      const scopedIds = new Set<number>();
-      for (const routeId of item.routeIds) {
-        const routeEstablishments = establishmentIdsByRoute.get(routeId);
-        if (!routeEstablishments) continue;
-        for (const establishmentId of routeEstablishments) {
-          scopedIds.add(establishmentId);
-        }
-      }
+  const companies = [...byCompany.entries()]
+    .map<CompanyProductividadCompanySummary>(([key, item]) => {
+      const companyRoutes = routeIdsByCompany.get(key) ?? new Set<number>();
+      const companyEstablishments = establishmentIdsByCompany.get(key) ?? new Set<number>();
 
       let completedRouteEstablishments = 0;
-      for (const establishmentId of scopedIds) {
+      for (const establishmentId of companyEstablishments) {
         if (item.visitedEstablishments.has(establishmentId)) {
           completedRouteEstablishments += 1;
         }
       }
 
-      const scopedCount = scopedIds.size;
+      const scopedCount = companyEstablishments.size;
       const completionRate =
         scopedCount > 0 ? (completedRouteEstablishments / scopedCount) * 100 : null;
 
@@ -122,7 +126,7 @@ export function buildCompanyProductividadSummary(
         activeDays: item.days.size,
         averagePerDay: item.days.size > 0 ? item.totalRecords / item.days.size : 0,
         visitedEstablishments: item.visitedEstablishments.size,
-        routeCount: item.routeIds.size,
+        routeCount: companyRoutes.size,
         scopedEstablishments: scopedCount,
         completedRouteEstablishments,
         completionRate,
@@ -154,6 +158,7 @@ export function buildCompanyProductividadSummary(
     totalVisitedEstablishments: globalVisitedEstablishments.size,
     totalRoutesInScope: globalRoutes.size,
     totalScopedEstablishments,
+    totalGeneralEstablishments: globalScopedEstablishments.size,
     totalCompletedRouteEstablishments,
     overallCompletionRate:
       totalScopedEstablishments > 0

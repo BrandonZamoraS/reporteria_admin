@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { createClient } from "@supabase/supabase-js";
 import { logAuditAction } from "@/lib/audit/log";
+import type { AppRole } from "@/lib/auth/roles";
 import { getCurrentUserProfile } from "@/lib/auth/profile";
 import { buildPresentationPhotoCards, buildPresentationReportPdf } from "@/lib/reports/presentation-report";
 import {
@@ -525,8 +526,8 @@ function buildProductividadEmpresa(
   const summary = buildCompanyProductividadSummary(rows, scopedEstablishments);
 
   let y = drawStatBoxes(doc, startY, [
-    { label: "Total registros", value: String(summary.totalRecords) },
     { label: "Empresas", value: String(summary.totalCompanies) },
+    { label: "Total establecimientos", value: String(summary.totalGeneralEstablishments) },
     { label: "Establecimientos visitados", value: String(summary.totalVisitedEstablishments) },
     {
       label: "Completitud global",
@@ -592,6 +593,164 @@ async function fetchRouteScopedEstablishments(params: {
       routeId: row.route_id,
       establishmentId: row.establishment_id,
     }));
+}
+
+async function fetchCompanyProductividadScope(params: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  role: AppRole;
+  authUserId: string;
+  companyId: number | null;
+  routeId: number | null;
+  establishmentId: number | null;
+}): Promise<CompanyProductividadScopeEstablishment[]> {
+  const { supabase, role, authUserId, companyId, routeId, establishmentId } = params;
+
+  let effectiveCompanyIds: number[] = [];
+  if (role === "visitante") {
+    const ownCompanyRes = await supabase
+      .from("user_profile")
+      .select("company_id")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle();
+
+    const ownCompanyId = ownCompanyRes.data?.company_id ?? null;
+    if (!ownCompanyId) return [];
+    effectiveCompanyIds = [ownCompanyId];
+  } else if (companyId) {
+    effectiveCompanyIds = [companyId];
+  } else {
+    const { data: companiesData, error: companiesError } = await supabase
+      .from("company")
+      .select("company_id, name")
+      .order("name", { ascending: true });
+
+    if (companiesError) {
+      throw new Error(`No se pudieron cargar las empresas del reporte: ${companiesError.message}`);
+    }
+
+    effectiveCompanyIds = (companiesData ?? [])
+      .map((row) => row.company_id)
+      .filter((value): value is number => typeof value === "number");
+  }
+
+  if (effectiveCompanyIds.length === 0) return [];
+
+  const { data: productRows, error: productsError } = await supabase
+    .from("product")
+    .select("product_id, company_id, company:company_id(name)")
+    .in("company_id", effectiveCompanyIds);
+
+  if (productsError) {
+    throw new Error(`No se pudieron cargar los productos del reporte: ${productsError.message}`);
+  }
+
+  const companyByProductId = new Map<number, { companyId: number; companyName: string }>();
+  for (const row of productRows ?? []) {
+    const currentCompanyId = typeof row.company_id === "number" ? row.company_id : null;
+    if (currentCompanyId == null || typeof row.product_id !== "number") continue;
+
+    const companyRef = Array.isArray(row.company) ? row.company[0] : row.company;
+    companyByProductId.set(row.product_id, {
+      companyId: currentCompanyId,
+      companyName: companyRef?.name ?? "Sin empresa",
+    });
+  }
+
+  const productIds = [...companyByProductId.keys()];
+  if (productIds.length === 0) return [];
+
+  let relationsQuery = supabase
+    .from("products_establishment")
+    .select("product_id, establishment_id")
+    .in("product_id", productIds);
+
+  if (establishmentId) {
+    relationsQuery = relationsQuery.eq("establishment_id", establishmentId);
+  }
+
+  const { data: relationRows, error: relationsError } = await relationsQuery;
+  if (relationsError) {
+    throw new Error(`No se pudieron cargar las relaciones producto-establecimiento: ${relationsError.message}`);
+  }
+
+  const companyRefsByEstablishmentId = new Map<number, Map<number, string>>();
+  for (const row of relationRows ?? []) {
+    if (typeof row.product_id !== "number" || typeof row.establishment_id !== "number") continue;
+
+    const companyRef = companyByProductId.get(row.product_id);
+    if (!companyRef) continue;
+
+    const bucket = companyRefsByEstablishmentId.get(row.establishment_id) ?? new Map<number, string>();
+    bucket.set(companyRef.companyId, companyRef.companyName);
+    companyRefsByEstablishmentId.set(row.establishment_id, bucket);
+  }
+
+  const establishmentIds = [...companyRefsByEstablishmentId.keys()];
+  if (establishmentIds.length === 0) return [];
+
+  let establishmentsQuery = supabase
+    .from("establishment")
+    .select("establishment_id, route_id")
+    .in("establishment_id", establishmentIds)
+    .not("route_id", "is", null);
+
+  if (routeId) {
+    establishmentsQuery = establishmentsQuery.eq("route_id", routeId);
+  }
+
+  const { data: establishmentRows, error: establishmentsError } = await establishmentsQuery;
+  if (establishmentsError) {
+    throw new Error(`No se pudieron cargar los establecimientos del reporte: ${establishmentsError.message}`);
+  }
+
+  const routeIds = Array.from(
+    new Set(
+      (establishmentRows ?? [])
+        .map((row) => row.route_id)
+        .filter((value): value is number => typeof value === "number")
+    )
+  );
+  if (routeIds.length === 0) return [];
+
+  let routesQuery = supabase
+    .from("route")
+    .select("route_id")
+    .in("route_id", routeIds)
+    .eq("is_active", true);
+
+  if (routeId) {
+    routesQuery = routesQuery.eq("route_id", routeId);
+  }
+
+  const { data: routeRows, error: routesError } = await routesQuery;
+  if (routesError) {
+    throw new Error(`No se pudieron cargar las rutas activas del reporte: ${routesError.message}`);
+  }
+
+  const activeRouteIds = new Set(
+    (routeRows ?? []).map((row) => row.route_id).filter((value): value is number => typeof value === "number")
+  );
+
+  const scopeMap = new Map<string, CompanyProductividadScopeEstablishment>();
+  for (const row of establishmentRows ?? []) {
+    if (typeof row.establishment_id !== "number" || typeof row.route_id !== "number") continue;
+    if (!activeRouteIds.has(row.route_id)) continue;
+
+    const companies = companyRefsByEstablishmentId.get(row.establishment_id);
+    if (!companies) continue;
+
+    for (const [currentCompanyId, currentCompanyName] of companies.entries()) {
+      const key = `${currentCompanyId}:${row.route_id}:${row.establishment_id}`;
+      scopeMap.set(key, {
+        companyId: currentCompanyId,
+        companyName: currentCompanyName,
+        routeId: row.route_id,
+        establishmentId: row.establishment_id,
+      });
+    }
+  }
+
+  return [...scopeMap.values()];
 }
 
 async function fetchProductividadAssignments(params: {
@@ -876,16 +1035,12 @@ export async function GET(request: Request) {
 
         pdfBuffer = await buildBrandedPdf(reportType, rows, undefined, assignments);
       } else if (reportType === "productividad_empresa") {
-        const routeIds = Array.from(
-          new Set(
-            rows
-              .map((row) => row.routeId)
-              .filter((routeId): routeId is number => typeof routeId === "number")
-          )
-        );
-        const scopedEstablishments = await fetchRouteScopedEstablishments({
+        const scopedEstablishments = await fetchCompanyProductividadScope({
           supabase,
-          routeIds,
+          role: profile.role,
+          authUserId: user.id,
+          companyId: filters.companyId,
+          routeId: filters.routeId,
           establishmentId: filters.establishmentId,
         });
 
