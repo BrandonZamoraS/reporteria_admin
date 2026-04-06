@@ -81,6 +81,15 @@ function limitText(value: string | null, maxLength: number) {
   return `${trimmed.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+export function summarizePresentationPageEstablishments(
+  page: Pick<PresentationPage, "establishments">,
+  maxLength = 120
+) {
+  const raw = page.establishments.map((item) => item.establishmentName).join("  |  ");
+  if (raw.length <= maxLength) return raw;
+  return `${raw.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
 function collectPdf(doc: PDFKit.PDFDocument): Promise<Buffer> {
   const chunks: Buffer[] = [];
   return new Promise<Buffer>((resolve, reject) => {
@@ -143,7 +152,13 @@ function drawCardText(
   x: number,
   y: number,
   width: number,
-  options: { font?: string; size?: number; color?: string; align?: "left" | "center" | "right" } = {}
+  options: {
+    font?: string;
+    size?: number;
+    color?: string;
+    align?: "left" | "center" | "right";
+    lineBreak?: boolean;
+  } = {}
 ) {
   doc.save();
   doc
@@ -153,6 +168,7 @@ function drawCardText(
     .text(text, x, y, {
       width,
       align: options.align ?? "left",
+      lineBreak: options.lineBreak ?? true,
     });
   doc.restore();
 }
@@ -234,21 +250,24 @@ async function drawPresentationCard(params: {
   doc.roundedRect(x, y, width, height, 12).fillAndStroke("#FFFFFF", "#D7DFDA");
   doc.roundedRect(x + padding, y + padding, width - padding * 2, 20, 10).fill("#E8EFEA");
 
-  drawCardText(doc, normalizeEstablishmentName(card.establishmentName), x + padding + 8, y + padding + 4, width - 36, {
+  drawCardText(doc, limitText(normalizeEstablishmentName(card.establishmentName), 42), x + padding + 8, y + padding + 4, width - 36, {
     font: "Helvetica-Bold",
     size: 10,
     color: "#0D3233",
+    lineBreak: false,
   });
 
-  drawCardText(doc, `Registro #${card.recordId}`, x + padding, y + 36, width * 0.32, {
+  drawCardText(doc, "Registro", x + padding, y + 36, width * 0.24, {
     font: "Helvetica-Bold",
     size: 9,
     color: "#102A43",
+    lineBreak: false,
   });
-  drawCardText(doc, formatDateTime(card.timeDate), x + width * 0.34, y + 36, width * 0.56 - padding, {
+  drawCardText(doc, formatDateTime(card.timeDate), x + width * 0.26, y + 36, width * 0.64 - padding, {
     size: 9,
     color: "#486581",
     align: "right",
+    lineBreak: false,
   });
 
   drawCardText(
@@ -257,11 +276,12 @@ async function drawPresentationCard(params: {
     x + padding,
     y + 52,
     width - padding * 2,
-    { size: 8.5, color: "#486581" }
+    { size: 8.5, color: "#486581", lineBreak: false }
   );
-  drawCardText(doc, limitText(card.comments, 120), x + padding, y + 66, width - padding * 2, {
+  drawCardText(doc, limitText(card.comments, 72), x + padding, y + 66, width - padding * 2, {
     size: 8,
     color: "#334E68",
+    lineBreak: false,
   });
 
   if (prepared.imageBuffer) {
@@ -280,14 +300,12 @@ async function drawPresentationCard(params: {
     });
   }
 
-  drawCardText(
-    doc,
-    `Evidencia #${card.evidenceId}`,
-    x + padding,
-    y + height - 24,
-    width - padding * 2,
-    { font: "Helvetica-Bold", size: 8, color: "#5A7984" }
-  );
+  drawCardText(doc, "Evidencia fotografica", x + padding, y + height - 24, width - padding * 2, {
+    font: "Helvetica-Bold",
+    size: 8,
+    color: "#5A7984",
+    lineBreak: false,
+  });
 }
 
 async function drawPresentationPage(
@@ -342,11 +360,11 @@ async function drawPresentationPage(
 
   drawCardText(
     doc,
-    page.establishments.map((item) => item.establishmentName).join("  |  "),
+    summarizePresentationPageEstablishments(page, 118),
     left,
     doc.page.height - doc.page.margins.bottom - 6,
     usableWidth,
-    { size: 8, color: "#5A7984", align: "center" }
+    { size: 8, color: "#5A7984", align: "center", lineBreak: false }
   );
 }
 
