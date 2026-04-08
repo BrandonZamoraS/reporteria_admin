@@ -114,7 +114,10 @@ export function AdaptiveSelect({
           setQuery(nextValue);
 
           if (selectedOption && nextValue !== selectedOption.label) {
-            handleValueChange("");
+            const matchesOption = options.some((opt) => opt.label === nextValue);
+            if (!matchesOption) {
+              handleValueChange("");
+            }
           }
         }}
         onSelect={(option) => {

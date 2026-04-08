@@ -300,7 +300,7 @@ export function buildRouteRealtimeSummary(params: {
     const recordedProductIds =
       recordedProductIdsByEstablishmentId.get(establishment.establishment_id) ?? new Set<number>();
     const isCompleted = period.active
-      ? hasAssignedProductsContext
+      ? hasAssignedProductsContext && assignedProductIds.length > 0
         ? assignedProductIds.every((productId) => recordedProductIds.has(productId))
         : Boolean(lastRecordAt)
       : false;
