@@ -257,9 +257,10 @@ export function buildRouteRealtimeSummary(params: {
   establishments: RouteSummaryEstablishment[];
   records: RouteSummaryRecord[];
   now?: Date;
+  periodOverride?: ActiveRoutePeriod;
 }): RouteRealtimeSummary {
-  const { route, establishments, records, now } = params;
-  const period = getActiveRoutePeriod(route, now);
+  const { route, establishments, records, now, periodOverride } = params;
+  const period = periodOverride ?? getActiveRoutePeriod(route, now);
   const latestRecordByEstablishmentId = new Map<number, string>();
   const recordedProductIdsByEstablishmentId = new Map<number, Set<number>>();
 

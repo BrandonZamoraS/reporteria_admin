@@ -7,6 +7,7 @@ import { getCurrentUserProfile, getUserRoleFromProfile } from "@/lib/auth/profil
 import { APP_ROLE_COOKIE, isAppRole, roleHomePath, type AppRole } from "@/lib/auth/roles";
 import {
   buildRouteRealtimeSummary,
+  type ActiveRoutePeriod,
   type RouteRealtimeSummary,
   type RouteSummaryEstablishment,
   type RouteSummaryRecord,
@@ -794,6 +795,30 @@ async function buildRouteSummaryForSelection(params: {
   const { supabase, route, establishments, productIds } = params;
   let establishmentsWithAssignments = establishments;
 
+  // Consultar el lapso activo real en BD (tiene prioridad sobre el cálculo matemático)
+  const { data: activeLapsoData } = await supabase
+    .from("route_lapso")
+    .select("start_at, end_at, duration_days")
+    .eq("route_id", route.route_id)
+    .eq("status", "en_curso")
+    .order("start_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let periodOverride: ActiveRoutePeriod | undefined;
+  if (activeLapsoData) {
+    periodOverride = {
+      configured: true,
+      active: true,
+      dayLabel: route.day,
+      visitPeriodDays: activeLapsoData.duration_days,
+      startAt: activeLapsoData.start_at,
+      endAt: activeLapsoData.end_at,
+      nextStartAt: null,
+      message: "Lapso activo en curso.",
+    };
+  }
+
   if (establishments.length > 0) {
     let relationsQuery = supabase
       .from("products_establishment")
@@ -836,6 +861,7 @@ async function buildRouteSummaryForSelection(params: {
     route,
     establishments: establishmentsWithAssignments,
     records: [],
+    periodOverride,
   });
 
   let records: RouteSummaryRecord[] = [];
@@ -868,6 +894,7 @@ async function buildRouteSummaryForSelection(params: {
     route,
     establishments: establishmentsWithAssignments,
     records,
+    periodOverride,
   });
 }
 
