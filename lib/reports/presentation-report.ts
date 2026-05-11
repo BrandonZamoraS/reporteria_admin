@@ -130,8 +130,8 @@ async function preparePresentationImage(card: PresentationPhotoCard): Promise<Pr
   try {
     const processed = await sharp(original)
       .rotate()
-      .resize({ width: 800, withoutEnlargement: true })
-      .jpeg({ quality: 60, mozjpeg: true })
+      .resize({ width: 640, withoutEnlargement: true })
+      .jpeg({ quality: 45, mozjpeg: true })
       .toBuffer();
 
     return { imageBuffer: processed };
