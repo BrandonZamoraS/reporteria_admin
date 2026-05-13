@@ -169,11 +169,18 @@ function drawTable(
   rows: string[][],
   options?: { highlightColumn?: number }
 ): number {
+  if (rows.length === 0) return cursorY;
+
   const left = doc.page.margins.left;
   const rowHeight = 18;
   const headerHeight = 22;
   const totalWidth = columns.reduce((s, c) => s + c.width, 0);
   const pageBottom = doc.page.height - doc.page.margins.bottom;
+
+  if (cursorY + headerHeight > pageBottom) {
+    doc.addPage();
+    cursorY = doc.page.margins.top;
+  }
 
   let y = drawTableHeader(doc, cursorY, left, columns, totalWidth, headerHeight);
 
@@ -517,25 +524,8 @@ function buildProductividad(
     ])
   );
 
-  y = drawSectionTitle(doc, y, "Registros existentes por tienda");
-  drawTable(
-    doc,
-    y,
-    [
-      { header: "Tienda", width: usable * 0.18 },
-      { header: "Fecha", width: usable * 0.16 },
-      { header: "Producto", width: usable * 0.18 },
-      { header: "SKU", width: usable * 0.10, align: "center" },
-      { header: "Sistema/Real", width: usable * 0.12, align: "center" },
-      { header: "Evidencia", width: usable * 0.10, align: "center" },
-      { header: "Comentario", width: usable * 0.16 },
-    ],
-    summary.stores.flatMap((store) => {
-      if (store.records.length === 0) {
-        return [[store.establishmentName, "-", "-", "-", "-", "-", store.note ?? "Sin registros"]];
-      }
-
-      return store.records.map((record) => [
+  const recordRows = summary.stores.flatMap((store) =>
+    store.records.map((record) => [
         store.establishmentName,
         formatDateTime(record.timeDate),
         record.productName ?? "-",
@@ -543,9 +533,26 @@ function buildProductividad(
         `${record.systemInventory ?? "-"}/${record.realInventory ?? "-"}`,
         record.evidenceNum == null ? "-" : String(record.evidenceNum),
         record.comments ? record.comments.slice(0, 42) : "-",
-      ]);
-    })
+      ])
   );
+
+  if (recordRows.length > 0) {
+    y = drawSectionTitle(doc, y, "Registros existentes por tienda");
+    drawTable(
+      doc,
+      y,
+      [
+        { header: "Tienda", width: usable * 0.18 },
+        { header: "Fecha", width: usable * 0.16 },
+        { header: "Producto", width: usable * 0.18 },
+        { header: "SKU", width: usable * 0.10, align: "center" },
+        { header: "Sistema/Real", width: usable * 0.12, align: "center" },
+        { header: "Evidencia", width: usable * 0.10, align: "center" },
+        { header: "Comentario", width: usable * 0.16 },
+      ],
+      recordRows
+    );
+  }
 }
 
 function buildProductividadEmpresa(
