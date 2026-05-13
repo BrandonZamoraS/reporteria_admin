@@ -9,6 +9,7 @@ export type PresentationPhotoCard = {
   establishmentId: number | null;
   establishmentName: string | null;
   companyName: string | null;
+  productName: string | null;
   recordId: number;
   evidenceId: number;
   recordSequence: number;
@@ -36,6 +37,7 @@ export type PresentationRecordGroup = {
   recordSequence: number;
   showRecordSummary: boolean;
   establishmentName: string | null;
+  productName: string | null;
   timeDate: string;
   comments: string | null;
   systemInventory: number | null;
@@ -166,6 +168,7 @@ export function groupPresentationCardsByRecord(cards: PresentationPhotoCard[]): 
       recordSequence: card.recordSequence,
       showRecordSummary: card.showRecordSummary,
       establishmentName: card.establishmentName,
+      productName: card.productName,
       timeDate: card.timeDate,
       comments: card.comments,
       systemInventory: card.systemInventory,
@@ -266,7 +269,7 @@ async function drawPresentationGroup(params: {
 }) {
   const { doc, group, x, y, width, height } = params;
   const padding = 10;
-  const summaryHeight = group.showRecordSummary ? 42 : 18;
+  const summaryHeight = group.showRecordSummary ? 56 : 32;
   const imageAreaY = y + 56 + summaryHeight;
   const imageHeight = Math.max(72, height - (imageAreaY - y) - 34);
   const imageAreaWidth = width - padding * 2;
@@ -298,23 +301,29 @@ async function drawPresentationGroup(params: {
     align: "right",
     lineBreak: false,
   });
+  drawCardText(doc, `Producto: ${limitText(group.productName, 46, "Sin producto")}`, x + padding, y + 52, width - padding * 2, {
+    font: "Helvetica-Bold",
+    size: 8.5,
+    color: "#0D3233",
+    lineBreak: false,
+  });
 
   if (group.showRecordSummary) {
     drawCardText(
       doc,
       `Fisico: ${formatInventory(group.realInventory)}   Sistema: ${formatInventory(group.systemInventory)}`,
       x + padding,
-      y + 52,
+      y + 66,
       width - padding * 2,
       { size: 8.5, color: "#486581", lineBreak: false }
     );
-    drawCardText(doc, limitText(group.comments, 72), x + padding, y + 66, width - padding * 2, {
+    drawCardText(doc, limitText(group.comments, 72), x + padding, y + 80, width - padding * 2, {
       size: 8,
       color: "#334E68",
       lineBreak: false,
     });
   } else {
-    drawCardText(doc, "Continuacion fotografica", x + padding, y + 58, width - padding * 2, {
+    drawCardText(doc, "Continuacion fotografica", x + padding, y + 66, width - padding * 2, {
       font: "Helvetica-Bold",
       size: 8,
       color: "#5A7984",
@@ -424,6 +433,7 @@ export function buildPresentationPhotoCards(
         establishmentId: row.establishmentId,
         establishmentName: row.establishmentName,
         companyName: row.companyName,
+        productName: row.productName,
         recordId: row.recordId,
         evidenceId: evidence.evidence_id,
         photoUrl,
