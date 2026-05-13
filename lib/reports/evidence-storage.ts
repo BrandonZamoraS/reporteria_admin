@@ -1,4 +1,4 @@
-import { getSupabaseEnv } from "@/lib/supabase/env";
+import { getSupabaseEnv } from "../supabase/env.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DEFAULT_EVIDENCE_BUCKET_CANDIDATES = [
@@ -14,6 +14,64 @@ function isHttpUrl(value: string) {
 
 function unique(values: string[]) {
   return [...new Set(values.filter((value) => value.trim().length > 0))];
+}
+
+export type EvidenceStorageReference = {
+  bucket: string;
+  objectPath: string;
+};
+
+export function normalizeEvidenceCount(totalRows: number): number | null {
+  return Number.isInteger(totalRows) && totalRows >= 0 ? totalRows : null;
+}
+
+export function decomposeEvidenceStorageReference(
+  rawUrl: string
+): EvidenceStorageReference | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      return null;
+    }
+
+    const marker = "/storage/v1/object/";
+    const markerIndex = parsed.pathname.indexOf(marker);
+    if (markerIndex === -1) return null;
+
+    const remainder = parsed.pathname.slice(markerIndex + marker.length);
+    const [visibility, bucket, ...pathParts] = remainder.split("/").filter(Boolean);
+    if (!visibility || !bucket || pathParts.length === 0) return null;
+
+    return {
+      bucket,
+      objectPath: decodeURIComponent(pathParts.join("/")),
+    };
+  }
+
+  const normalized = trimmed.replace(/^\/+/, "");
+  if (normalized.startsWith("storage/v1/object/")) {
+    const remainder = normalized.slice("storage/v1/object/".length);
+    const [visibility, bucket, ...pathParts] = remainder.split("/").filter(Boolean);
+    if (!visibility || !bucket || pathParts.length === 0) return null;
+
+    return {
+      bucket,
+      objectPath: decodeURIComponent(pathParts.join("/")),
+    };
+  }
+
+  const [bucket, ...pathParts] = normalized.split("/").filter(Boolean);
+  if (!bucket || pathParts.length === 0) return null;
+
+  return {
+    bucket,
+    objectPath: pathParts.join("/"),
+  };
 }
 
 export async function resolveEvidenceUrl(

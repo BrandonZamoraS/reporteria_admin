@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { EvidenceGallery } from "@/app/registros/[recordId]/_components/evidence-gallery";
+import { RecordDeleteButton } from "@/app/registros/[recordId]/_components/record-delete-button";
 import { requireRole } from "@/lib/auth/require-role";
+import { resolveEvidenceUrl } from "@/lib/reports/evidence-storage";
 import { getSupabaseEnv, getSupabaseServiceRoleKey } from "@/lib/supabase/env";
 
 type PageProps = {
@@ -14,13 +16,6 @@ type EvidenceRow = {
   url?: string;
   geo_info?: string | null;
 } | null;
-
-const DEFAULT_EVIDENCE_BUCKET_CANDIDATES = [
-  "check-evidences",
-  "evidence",
-  "record-evidence",
-  "records",
-] as const;
 
 function formatDateTime(value: string | null) {
   if (!value) return "-";
@@ -42,68 +37,8 @@ function takeFirst<T>(value: T | T[] | null | undefined): T | null {
   return value;
 }
 
-function isHttpUrl(value: string) {
-  return /^https?:\/\//i.test(value);
-}
-
-function unique(values: string[]) {
-  return [...new Set(values.filter((value) => value.trim().length > 0))];
-}
-
-async function resolveEvidenceUrl(
-  supabase: SupabaseClient,
-  rawUrl: string
-) {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return null;
-  if (isHttpUrl(trimmed)) return trimmed;
-
-  const { url: supabaseUrl } = getSupabaseEnv();
-
-  if (trimmed.startsWith("/storage/")) {
-    return `${supabaseUrl}${trimmed}`;
-  }
-
-  if (trimmed.startsWith("storage/")) {
-    return `${supabaseUrl}/${trimmed}`;
-  }
-
-  if (trimmed.startsWith("/")) {
-    return trimmed;
-  }
-
-  const envBucket = (process.env.NEXT_PUBLIC_EVIDENCE_BUCKET ?? process.env.EVIDENCE_BUCKET ?? "").trim();
-  const segments = trimmed.split("/").filter(Boolean);
-  const firstSegmentBucket = segments.length > 1 ? segments[0] : "";
-  const firstSegmentPath = segments.length > 1 ? segments.slice(1).join("/") : "";
-
-  const bucketCandidates = unique([
-    envBucket,
-    firstSegmentBucket,
-    ...DEFAULT_EVIDENCE_BUCKET_CANDIDATES,
-  ]);
-
-  const pathCandidates = unique([
-    trimmed,
-    firstSegmentPath,
-  ]);
-
-  for (const bucket of bucketCandidates) {
-    for (const objectPath of pathCandidates) {
-      if (!bucket || !objectPath) continue;
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectPath, 60 * 60);
-      if (!error && data?.signedUrl) {
-        return data.signedUrl;
-      }
-    }
-  }
-
-  // Last fallback for common "bucket/path" persisted in DB.
-  return `${supabaseUrl}/storage/v1/object/public/${trimmed}`;
-}
-
 export default async function RecordDetailPage({ params }: PageProps) {
-  const { supabase } = await requireRole(["admin", "editor", "rutero", "visitante"]);
+  const { supabase, role } = await requireRole(["admin", "editor", "rutero", "visitante"]);
   const { url: supabaseUrl } = getSupabaseEnv();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const signerClient = serviceRoleKey
@@ -226,6 +161,17 @@ export default async function RecordDetailPage({ params }: PageProps) {
             >
               Volver
             </Link>
+            {role === "admin" ? (
+              <>
+                <Link
+                  href={`/registros/${record.record_id}/editar`}
+                  className="rounded-[8px] border border-[var(--border)] bg-white px-4 py-2 text-[13px] font-semibold text-foreground"
+                >
+                  Modificar
+                </Link>
+                <RecordDeleteButton recordId={record.record_id} />
+              </>
+            ) : null}
           </div>
         </div>
       </header>
