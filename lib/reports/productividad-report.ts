@@ -1,172 +1,142 @@
 import type { FlatRow } from "@/lib/reports/export-core";
 
-export type ProductividadAssignmentRoute = {
-  routeId: number;
-  assignedUserId: number;
-};
-
-export type ProductividadAssignmentEstablishment = {
-  routeId: number;
+export type ProductividadAssignedStore = {
   establishmentId: number;
+  establishmentName: string;
+  routeId: number;
+  routeName: string;
+  direction: string | null;
+  zone: string | null;
+  format: string | null;
 };
 
-export type ProductividadAssignmentData = {
-  routes: ProductividadAssignmentRoute[];
-  establishments: ProductividadAssignmentEstablishment[];
+export type ProductividadStoreProduct = {
+  establishmentId: number;
+  productId: number;
+  productName: string;
+  productSku: string | null;
 };
 
-export type ProductividadUserSummary = {
-  userId: number | null;
-  userName: string;
-  totalRecords: number;
-  activeDays: number;
-  averagePerDay: number;
-  visitedEstablishments: number;
-  assignedEstablishments: number;
-  completedAssignedEstablishments: number;
-  completionRate: number | null;
+export type ProductividadStoreRecord = Pick<
+  FlatRow,
+  | "recordId"
+  | "systemInventory"
+  | "realInventory"
+  | "evidenceNum"
+  | "comments"
+  | "timeDate"
+  | "productId"
+  | "productSku"
+  | "productName"
+  | "establishmentId"
+  | "establishmentName"
+  | "routeId"
+  | "userId"
+  | "userName"
+>;
+
+export type ProductividadUserStoreSummary = ProductividadAssignedStore & {
+  status: "Realizada" | "No realizada";
+  activeProducts: number;
+  registeredProducts: number;
+  missingProducts: ProductividadStoreProduct[];
+  records: ProductividadStoreRecord[];
+  note: string | null;
 };
 
 export type ProductividadSummary = {
-  totalRecords: number;
-  totalUsers: number;
-  totalActiveDays: number;
-  averagePerDay: number;
-  totalVisitedEstablishments: number;
-  totalAssignedEstablishments: number;
-  totalCompletedAssignedEstablishments: number;
-  overallCompletionRate: number | null;
-  users: ProductividadUserSummary[];
-};
-
-type UserAccumulator = {
-  userId: number | null;
+  userId: number;
   userName: string;
+  assignedActiveStores: number;
+  completedStores: number;
+  incompleteStores: number;
+  completionRate: number;
+  expectedProducts: number;
+  registeredProducts: number;
   totalRecords: number;
-  days: Set<string>;
-  visitedEstablishments: Set<number>;
+  stores: ProductividadUserStoreSummary[];
 };
 
-function buildUserKey(row: FlatRow) {
-  return `${row.userId ?? "none"}::${row.userName ?? "Sin usuario"}`;
+export type ProductividadReportData = {
+  userId: number;
+  userName: string;
+  assignedStores: ProductividadAssignedStore[];
+  storeProducts: ProductividadStoreProduct[];
+  records: ProductividadStoreRecord[];
+};
+
+function productLabel(product: ProductividadStoreProduct) {
+  return product.productSku ? `${product.productName} (${product.productSku})` : product.productName;
 }
 
-function createUserAccumulator(row: FlatRow): UserAccumulator {
-  return {
-    userId: row.userId,
-    userName: row.userName ?? "Sin usuario",
-    totalRecords: 0,
-    days: new Set<string>(),
-    visitedEstablishments: new Set<number>(),
-  };
-}
-
-export function buildProductividadSummary(
-  rows: FlatRow[],
-  assignments: ProductividadAssignmentData
-): ProductividadSummary {
-  const byUser = new Map<string, UserAccumulator>();
-  const globalDays = new Set<string>();
-  const globalVisitedEstablishments = new Set<number>();
-
-  for (const row of rows) {
-    const key = buildUserKey(row);
-    const current = byUser.get(key) ?? createUserAccumulator(row);
-    const day = row.timeDate.slice(0, 10);
-
-    current.totalRecords += 1;
-    current.days.add(day);
-    globalDays.add(day);
-
-    if (typeof row.establishmentId === "number") {
-      current.visitedEstablishments.add(row.establishmentId);
-      globalVisitedEstablishments.add(row.establishmentId);
+export function buildProductividadSummary(data: ProductividadReportData): ProductividadSummary {
+  const productsByStore = new Map<number, ProductividadStoreProduct[]>();
+  for (const product of data.storeProducts) {
+    const bucket = productsByStore.get(product.establishmentId) ?? [];
+    if (!bucket.some((item) => item.productId === product.productId)) {
+      bucket.push(product);
     }
-
-    byUser.set(key, current);
+    productsByStore.set(product.establishmentId, bucket);
   }
 
-  const assignedUserByRoute = new Map<number, number>();
-  for (const route of assignments.routes) {
-    assignedUserByRoute.set(route.routeId, route.assignedUserId);
+  const recordsByStore = new Map<number, ProductividadStoreRecord[]>();
+  for (const record of data.records) {
+    if (record.establishmentId == null) continue;
+    const bucket = recordsByStore.get(record.establishmentId) ?? [];
+    bucket.push(record);
+    recordsByStore.set(record.establishmentId, bucket);
   }
 
-  const assignedEstablishmentsByUser = new Map<number, Set<number>>();
-  for (const establishment of assignments.establishments) {
-    const assignedUserId = assignedUserByRoute.get(establishment.routeId);
-    if (assignedUserId == null) continue;
-
-    const bucket = assignedEstablishmentsByUser.get(assignedUserId) ?? new Set<number>();
-    bucket.add(establishment.establishmentId);
-    assignedEstablishmentsByUser.set(assignedUserId, bucket);
-  }
-
-  const users = [...byUser.values()]
-    .map<ProductividadUserSummary>((item) => {
-      const assignedEstablishments =
-        item.userId != null ? assignedEstablishmentsByUser.get(item.userId) ?? new Set<number>() : new Set<number>();
-
-      let completedAssignedEstablishments = 0;
-      for (const establishmentId of assignedEstablishments) {
-        if (item.visitedEstablishments.has(establishmentId)) {
-          completedAssignedEstablishments += 1;
-        }
-      }
-
-      const assignedCount = assignedEstablishments.size;
-      const completionRate =
-        assignedCount > 0 ? (completedAssignedEstablishments / assignedCount) * 100 : null;
+  const stores = data.assignedStores
+    .map<ProductividadUserStoreSummary>((store) => {
+      const activeProducts = productsByStore.get(store.establishmentId) ?? [];
+      const records = (recordsByStore.get(store.establishmentId) ?? []).sort((left, right) =>
+        right.timeDate.localeCompare(left.timeDate)
+      );
+      const registeredProductIds = new Set(
+        records.map((record) => record.productId).filter((value): value is number => typeof value === "number")
+      );
+      const registeredProducts = activeProducts.filter((product) => registeredProductIds.has(product.productId));
+      const missingProducts = activeProducts
+        .filter((product) => !registeredProductIds.has(product.productId))
+        .sort((left, right) => productLabel(left).localeCompare(productLabel(right), "es"));
+      const isCompleted = activeProducts.length > 0 && missingProducts.length === 0;
 
       return {
-        userId: item.userId,
-        userName: item.userName,
-        totalRecords: item.totalRecords,
-        activeDays: item.days.size,
-        averagePerDay: item.days.size > 0 ? item.totalRecords / item.days.size : 0,
-        visitedEstablishments: item.visitedEstablishments.size,
-        assignedEstablishments: assignedCount,
-        completedAssignedEstablishments,
-        completionRate,
+        ...store,
+        status: isCompleted ? "Realizada" : "No realizada",
+        activeProducts: activeProducts.length,
+        registeredProducts: registeredProducts.length,
+        missingProducts,
+        records,
+        note: activeProducts.length === 0 ? "Sin productos activos" : null,
       };
     })
     .sort((left, right) => {
-      if (right.totalRecords !== left.totalRecords) {
-        return right.totalRecords - left.totalRecords;
-      }
-
-      if (right.visitedEstablishments !== left.visitedEstablishments) {
-        return right.visitedEstablishments - left.visitedEstablishments;
-      }
-
-      return left.userName.localeCompare(right.userName, "es");
+      if (left.status !== right.status) return left.status === "No realizada" ? -1 : 1;
+      return left.establishmentName.localeCompare(right.establishmentName, "es");
     });
 
-  const totalAssignedEstablishments = users.reduce((sum, item) => sum + item.assignedEstablishments, 0);
-  const totalCompletedAssignedEstablishments = users.reduce(
-    (sum, item) => sum + item.completedAssignedEstablishments,
-    0
-  );
+  const completedStores = stores.filter((store) => store.status === "Realizada").length;
+  const expectedProducts = stores.reduce((sum, store) => sum + store.activeProducts, 0);
+  const registeredProducts = stores.reduce((sum, store) => sum + store.registeredProducts, 0);
 
   return {
-    totalRecords: rows.length,
-    totalUsers: users.length,
-    totalActiveDays: globalDays.size,
-    averagePerDay: globalDays.size > 0 ? rows.length / globalDays.size : 0,
-    totalVisitedEstablishments: globalVisitedEstablishments.size,
-    totalAssignedEstablishments,
-    totalCompletedAssignedEstablishments,
-    overallCompletionRate:
-      totalAssignedEstablishments > 0
-        ? (totalCompletedAssignedEstablishments / totalAssignedEstablishments) * 100
-        : null,
-    users,
+    userId: data.userId,
+    userName: data.userName,
+    assignedActiveStores: stores.length,
+    completedStores,
+    incompleteStores: stores.length - completedStores,
+    completionRate: stores.length > 0 ? (completedStores / stores.length) * 100 : 0,
+    expectedProducts,
+    registeredProducts,
+    totalRecords: data.records.length,
+    stores,
   };
 }
 
-export function formatProductividadCompletion(user: Pick<
-  ProductividadUserSummary,
-  "completionRate" | "completedAssignedEstablishments" | "assignedEstablishments"
->) {
-  if (user.completionRate == null) return "N/D";
-  return `${user.completionRate.toFixed(1)}% (${user.completedAssignedEstablishments}/${user.assignedEstablishments})`;
+export function formatProductividadCompletion(
+  summary: Pick<ProductividadSummary, "completionRate" | "completedStores" | "assignedActiveStores">
+) {
+  return `${summary.completionRate.toFixed(1)}% (${summary.completedStores}/${summary.assignedActiveStores})`;
 }

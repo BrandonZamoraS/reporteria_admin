@@ -11,18 +11,23 @@ import {
 } from "@/lib/reports/productividad-company-report";
 import {
   buildProductividadSummary,
-  formatProductividadCompletion,
-  type ProductividadAssignmentData,
+  type ProductividadAssignedStore,
+  type ProductividadReportData,
+  type ProductividadStoreProduct,
 } from "@/lib/reports/productividad-report";
 import { isReportType, reportsForRole, type ReportType } from "@/lib/reports/types";
 import {
   fetchEvidenceRows,
   fetchReportRows,
   formatDateTime,
+  MAX_ROWS,
   parseReportFilters,
   pdfName,
   reportTitle,
+  toExclusiveEndDate,
+  toFlatRow,
   type FlatRow,
+  type RawRow,
 } from "@/lib/reports/export-core";
 import { resolveEvidenceUrl } from "@/lib/reports/evidence-storage";
 import { getSupabaseEnv, getSupabaseServiceRoleKey } from "@/lib/supabase/env";
@@ -477,43 +482,69 @@ function buildAuditoria(doc: PDFKit.PDFDocument, startY: number, data: AuditData
 function buildProductividad(
   doc: PDFKit.PDFDocument,
   startY: number,
-  rows: FlatRow[],
-  assignments: ProductividadAssignmentData
+  data: ProductividadReportData
 ) {
-  const summary = buildProductividadSummary(rows, assignments);
+  const summary = buildProductividadSummary(data);
 
   let y = drawStatBoxes(doc, startY, [
-    { label: "Total registros", value: String(summary.totalRecords) },
-    { label: "Usuarios", value: String(summary.totalUsers) },
-    { label: "Establecimientos visitados", value: String(summary.totalVisitedEstablishments) },
-    {
-      label: "Completitud global",
-      value: summary.overallCompletionRate == null ? "N/D" : `${summary.overallCompletionRate.toFixed(1)}%`,
-    },
+    { label: "Tiendas activas asignadas", value: String(summary.assignedActiveStores) },
+    { label: "Realizadas", value: String(summary.completedStores) },
+    { label: "No realizadas", value: String(summary.incompleteStores) },
+    { label: "Completitud", value: `${summary.completionRate.toFixed(1)}%` },
   ]);
 
-  y = drawSectionTitle(doc, y, "Productividad por usuario");
+  y = drawSectionTitle(doc, y, `Productividad - ${summary.userName}`);
 
   const usable = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  y = drawTable(
+    doc,
+    y,
+    [
+      { header: "Tienda", width: usable * 0.22 },
+      { header: "Ruta", width: usable * 0.16 },
+      { header: "Estado", width: usable * 0.13, align: "center" },
+      { header: "Productos registrados/activos", width: usable * 0.15, align: "center" },
+      { header: "Registros", width: usable * 0.10, align: "center" },
+      { header: "Faltantes", width: usable * 0.24 },
+    ],
+    summary.stores.map((item) => [
+      item.establishmentName,
+      item.routeName,
+      item.status,
+      `${item.registeredProducts}/${item.activeProducts}`,
+      String(item.records.length),
+      item.note ?? (item.missingProducts.map((product) => product.productSku ?? product.productName).join(", ") || "-"),
+    ])
+  );
+
+  y = drawSectionTitle(doc, y, "Registros existentes por tienda");
   drawTable(
     doc,
     y,
     [
-      { header: "Usuario", width: usable * 0.22 },
-      { header: "Registros", width: usable * 0.12, align: "center" },
-      { header: "Dias activos", width: usable * 0.14, align: "center" },
-      { header: "Promedio diario", width: usable * 0.16, align: "center" },
-      { header: "Establecimientos visitados", width: usable * 0.16, align: "center" },
-      { header: "Completitud", width: usable * 0.20, align: "center" },
+      { header: "Tienda", width: usable * 0.18 },
+      { header: "Fecha", width: usable * 0.16 },
+      { header: "Producto", width: usable * 0.18 },
+      { header: "SKU", width: usable * 0.10, align: "center" },
+      { header: "Sistema/Real", width: usable * 0.12, align: "center" },
+      { header: "Evidencia", width: usable * 0.10, align: "center" },
+      { header: "Comentario", width: usable * 0.16 },
     ],
-    summary.users.map((item) => [
-      item.userName,
-      String(item.totalRecords),
-      String(item.activeDays),
-      item.averagePerDay.toFixed(2),
-      String(item.visitedEstablishments),
-      formatProductividadCompletion(item),
-    ])
+    summary.stores.flatMap((store) => {
+      if (store.records.length === 0) {
+        return [[store.establishmentName, "-", "-", "-", "-", "-", store.note ?? "Sin registros"]];
+      }
+
+      return store.records.map((record) => [
+        store.establishmentName,
+        formatDateTime(record.timeDate),
+        record.productName ?? "-",
+        record.productSku ?? "-",
+        `${record.systemInventory ?? "-"}/${record.realInventory ?? "-"}`,
+        record.evidenceNum == null ? "-" : String(record.evidenceNum),
+        record.comments ? record.comments.slice(0, 42) : "-",
+      ]);
+    })
   );
 }
 
@@ -753,53 +784,128 @@ async function fetchCompanyProductividadScope(params: {
   return [...scopeMap.values()];
 }
 
-async function fetchProductividadAssignments(params: {
+async function fetchProductividadData(params: {
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
-  userIds: number[];
-  routeId: number | null;
-  establishmentId: number | null;
-}): Promise<ProductividadAssignmentData> {
-  const { supabase, userIds, routeId, establishmentId } = params;
-  if (userIds.length === 0) {
-    return { routes: [], establishments: [] };
+  userId: number;
+  from: string;
+  to: string;
+}): Promise<ProductividadReportData> {
+  const { supabase, userId, from, to } = params;
+
+  const userRes = await supabase
+    .from("user_profile")
+    .select("user_id, name")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (userRes.error) {
+    throw new Error(`No se pudo cargar el usuario del reporte: ${userRes.error.message}`);
   }
 
-  let routesQuery = supabase
+  const userName = userRes.data?.name ?? `Usuario ${userId}`;
+
+  const { data: routesData, error: routesError } = await supabase
     .from("route")
-    .select("route_id, assigned_user")
+    .select("route_id, nombre")
     .eq("is_active", true)
-    .in("assigned_user", userIds);
-
-  if (routeId) {
-    routesQuery = routesQuery.eq("route_id", routeId);
-  }
-
-  const { data: routesData, error: routesError } = await routesQuery;
+    .eq("assigned_user", userId);
   if (routesError) {
     throw new Error(`No se pudieron cargar las rutas asignadas: ${routesError.message}`);
   }
 
-  const routes = (routesData ?? [])
+  const routes = (routesData ?? []).filter(
+    (row): row is { route_id: number; nombre: string | null } => typeof row.route_id === "number"
+  );
+  const routeIds = routes.map((route) => route.route_id);
+  if (routeIds.length === 0) {
+    return { userId, userName, assignedStores: [], storeProducts: [], records: [] };
+  }
+
+  const routeNameById = new Map(routes.map((route) => [route.route_id, route.nombre ?? `Ruta ${route.route_id}`]));
+
+  const { data: establishmentRows, error: establishmentsError } = await supabase
+    .from("establishment")
+    .select("establishment_id, name, route_id, direction, zone, format")
+    .in("route_id", routeIds)
+    .eq("is_active", true);
+
+  if (establishmentsError) {
+    throw new Error(`No se pudieron cargar las tiendas activas asignadas: ${establishmentsError.message}`);
+  }
+
+  const assignedStores: ProductividadAssignedStore[] = (establishmentRows ?? [])
     .filter(
-      (row): row is { route_id: number; assigned_user: number } =>
-        typeof row.route_id === "number" && typeof row.assigned_user === "number"
+      (row): row is {
+        establishment_id: number;
+        name: string | null;
+        route_id: number;
+        direction: string | null;
+        zone: string | null;
+        format: string | null;
+      } => typeof row.establishment_id === "number" && typeof row.route_id === "number"
     )
     .map((row) => ({
+      establishmentId: row.establishment_id,
+      establishmentName: row.name ?? `Tienda ${row.establishment_id}`,
       routeId: row.route_id,
-      assignedUserId: row.assigned_user,
+      routeName: routeNameById.get(row.route_id) ?? `Ruta ${row.route_id}`,
+      direction: row.direction ?? null,
+      zone: row.zone ?? null,
+      format: row.format ?? null,
     }));
 
-  const routeIds = routes.map((row) => row.routeId);
-  if (routeIds.length === 0) {
-    return { routes, establishments: [] };
+  const establishmentIds = assignedStores.map((store) => store.establishmentId);
+  if (establishmentIds.length === 0) {
+    return { userId, userName, assignedStores, storeProducts: [], records: [] };
   }
-  const establishments = await fetchRouteScopedEstablishments({
-    supabase,
-    routeIds,
-    establishmentId,
-  });
 
-  return { routes, establishments };
+  const { data: relationRows, error: relationsError } = await supabase
+    .from("products_establishment")
+    .select("establishment_id, product:product_id(product_id, sku, name, is_active)")
+    .in("establishment_id", establishmentIds);
+
+  if (relationsError) {
+    throw new Error(`No se pudieron cargar los productos activos de las tiendas: ${relationsError.message}`);
+  }
+
+  const storeProducts: ProductividadStoreProduct[] = [];
+  for (const row of relationRows ?? []) {
+    const productRef = Array.isArray(row.product) ? row.product[0] : row.product;
+    if (typeof row.establishment_id !== "number" || !productRef) continue;
+    if (productRef.is_active !== true || typeof productRef.product_id !== "number") continue;
+
+    storeProducts.push({
+      establishmentId: row.establishment_id,
+      productId: productRef.product_id,
+      productName: productRef.name ?? `Producto ${productRef.product_id}`,
+      productSku: productRef.sku ?? null,
+    });
+  }
+
+  const toExclusive = toExclusiveEndDate(to);
+  let recordsQuery = supabase
+    .from("check_record")
+    .select(
+      "record_id, system_inventory, real_inventory, evidence_num, comments, time_date, product:product_id(product_id, sku, name, company_id, company:company_id(name)), establishment:establishment_id(establishment_id, name, route_id), reporter:user_id(user_id, name)"
+    )
+    .eq("user_id", userId)
+    .in("establishment_id", establishmentIds)
+    .gte("time_date", `${from}T00:00:00`)
+    .order("time_date", { ascending: false })
+    .limit(MAX_ROWS);
+
+  if (toExclusive) {
+    recordsQuery = recordsQuery.lt("time_date", `${toExclusive}T00:00:00`);
+  }
+
+  const { data: recordRows, error: recordsError } = await recordsQuery;
+  if (recordsError) {
+    throw new Error(`No se pudieron cargar los registros del usuario: ${recordsError.message}`);
+  }
+
+  const scopedRecords = ((recordRows ?? []) as RawRow[]).map(toFlatRow);
+
+  return { userId, userName, assignedStores, storeProducts, records: scopedRecords };
 }
 
 /* ── Main PDF builder per report type ────────────────────── */
@@ -810,9 +916,9 @@ function buildBrandedPdf(
 function buildBrandedPdf(reportType: "auditoria", rows: null, auditData: AuditData): Promise<Buffer>;
 function buildBrandedPdf(
   reportType: "productividad",
-  rows: FlatRow[],
+  rows: null,
   auditData: undefined,
-  productividadAssignments: ProductividadAssignmentData
+  productividadData: ProductividadReportData
 ): Promise<Buffer>;
 function buildBrandedPdf(
   reportType: "productividad_empresa",
@@ -825,7 +931,7 @@ function buildBrandedPdf(
   reportType: ReportType,
   rows: FlatRow[] | null,
   auditData?: AuditData,
-  productividadAssignments?: ProductividadAssignmentData,
+  productividadData?: ProductividadReportData,
   companyScopedEstablishments?: CompanyProductividadScopeEstablishment[]
 ): Promise<Buffer> {
   const doc = new PDFDocument({
@@ -843,8 +949,14 @@ function buildBrandedPdf(
   const totalItems =
     reportType === "auditoria" && auditData
       ? auditData.actions.length + auditData.sessions.length
+      : reportType === "productividad" && productividadData
+        ? productividadData.records.length
       : (rows?.length ?? 0);
-  const y = drawHeader(doc, title, `Generado: ${now}  •  ${totalItems} registros analizados`);
+  const subtitle =
+    reportType === "productividad" && productividadData
+      ? `Usuario: ${productividadData.userName}  •  Generado: ${now}  •  ${totalItems} registros analizados`
+      : `Generado: ${now}  •  ${totalItems} registros analizados`;
+  const y = drawHeader(doc, title, subtitle);
 
   switch (reportType) {
     case "eficiencia":
@@ -859,7 +971,11 @@ function buildBrandedPdf(
       buildAuditoria(doc, y, auditData!);
       break;
     case "productividad":
-      buildProductividad(doc, y, rows!, productividadAssignments ?? { routes: [], establishments: [] });
+      buildProductividad(
+        doc,
+        y,
+        productividadData ?? { userId: 0, userName: "-", assignedStores: [], storeProducts: [], records: [] }
+      );
       break;
     case "productividad_empresa":
       buildProductividadEmpresa(doc, y, rows!, companyScopedEstablishments ?? []);
@@ -964,6 +1080,19 @@ export async function GET(request: Request) {
       });
 
       pdfBuffer = await buildBrandedPdf("auditoria", null, { actions, sessions });
+    } else if (reportType === "productividad") {
+      if (!filters.userId || !filters.from || !filters.to) {
+        return new Response("El reporte de productividad requiere Usuario, Desde y Hasta.", { status: 400 });
+      }
+
+      const productividadData = await fetchProductividadData({
+        supabase,
+        userId: filters.userId,
+        from: filters.from,
+        to: filters.to,
+      });
+
+      pdfBuffer = await buildBrandedPdf(reportType, null, undefined, productividadData);
     } else {
       /* ── Standard report path ──────────────────────────── */
       const { rows } = await fetchReportRows({
@@ -1018,22 +1147,6 @@ export async function GET(request: Request) {
           from: filters.from,
           to: filters.to,
         });
-      } else if (reportType === "productividad") {
-        const userIds = Array.from(
-          new Set(
-            rows
-              .map((row) => row.userId)
-              .filter((userId): userId is number => typeof userId === "number")
-          )
-        );
-        const assignments = await fetchProductividadAssignments({
-          supabase,
-          userIds,
-          routeId: filters.routeId,
-          establishmentId: filters.establishmentId,
-        });
-
-        pdfBuffer = await buildBrandedPdf(reportType, rows, undefined, assignments);
       } else if (reportType === "productividad_empresa") {
         const scopedEstablishments = await fetchCompanyProductividadScope({
           supabase,

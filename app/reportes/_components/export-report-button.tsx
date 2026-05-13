@@ -56,6 +56,10 @@ function shouldShowEstablishment(reportType: ReportType) {
   );
 }
 
+function isRequiredProductividadFilter(reportType: ReportType) {
+  return reportType === "productividad";
+}
+
 export function ExportReportButton({
   role,
   reportType,
@@ -87,6 +91,10 @@ export function ExportReportButton({
   );
   const showProduct = useMemo(() => shouldShowProduct(reportType), [reportType]);
   const showEstablishment = useMemo(() => shouldShowEstablishment(reportType), [reportType]);
+  const requireProductividadFilters = useMemo(
+    () => isRequiredProductividadFilter(reportType),
+    [reportType]
+  );
 
   const filteredProductOptions = useMemo(() => {
     const filtered = selectedCompanyId
@@ -177,8 +185,9 @@ export function ExportReportButton({
                   </span>
                   <AdaptiveSelect
                     name="userId"
-                    emptyOptionLabel="Todos"
+                    emptyOptionLabel={requireProductividadFilters ? "Selecciona usuario" : "Todos"}
                     placeholder="Buscar usuario"
+                    required={requireProductividadFilters}
                     options={users.map((option) => ({
                       value: String(option.id),
                       label: option.label,
@@ -244,6 +253,7 @@ export function ExportReportButton({
                 <input
                   type="date"
                   name="from"
+                  required={requireProductividadFilters}
                   className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
                 />
               </label>
@@ -253,6 +263,7 @@ export function ExportReportButton({
                 <input
                   type="date"
                   name="to"
+                  required={requireProductividadFilters}
                   className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
                 />
               </label>

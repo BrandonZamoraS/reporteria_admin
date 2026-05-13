@@ -6,7 +6,7 @@ export const MAX_ROWS = 2000;
 
 type CompanyRef = { name?: string } | Array<{ name?: string }> | null;
 
-type RawRow = {
+export type RawRow = {
   record_id: number;
   system_inventory: number | null;
   real_inventory: number | null;
@@ -94,7 +94,7 @@ function first<T>(value: T | T[] | null | undefined): T | null {
   return value;
 }
 
-function toFlatRow(row: RawRow): FlatRow {
+export function toFlatRow(row: RawRow): FlatRow {
   const product = first(row.product);
   const establishment = first(row.establishment);
   const reporter = first(row.reporter);

@@ -53,8 +53,8 @@ export const REPORT_DEFINITIONS: Record<ReportType, ReportDefinition> = {
   productividad: {
     type: "productividad",
     title: "Productividad",
-    summary: "Consolida volumen de registros por usuario y promedio diario.",
-    info: "Ayuda a comparar carga operativa entre usuarios en un rango de fechas.",
+    summary: "Mide avance de tiendas activas asignadas a un usuario por rutas activas.",
+    info: "Requiere usuario y rango de fechas; una tienda queda realizada solo cuando todos sus productos activos tienen registro del usuario en el periodo.",
   },
   productividad_empresa: {
     type: "productividad_empresa",
