@@ -991,7 +991,9 @@ function buildBrandedPdf(
       break;
   }
 
-  drawFooter(doc, title);
+  if (reportType !== "productividad") {
+    drawFooter(doc, title);
+  }
   doc.end();
   return bufferPromise;
 }
