@@ -796,8 +796,9 @@ async function fetchProductividadData(params: {
   userId: number;
   from: string;
   to: string;
+  companyId?: number | null;
 }): Promise<ProductividadReportData> {
-  const { supabase, userId, from, to } = params;
+  const { supabase, userId, from, to, companyId } = params;
 
   const userRes = await supabase
     .from("user_profile")
@@ -866,10 +867,37 @@ async function fetchProductividadData(params: {
     return { userId, userName, assignedStores, storeProducts: [], records: [] };
   }
 
-  const { data: relationRows, error: relationsError } = await supabase
+  let scopedProductIds: number[] | null = null;
+  if (companyId) {
+    const { data: companyProductRows, error: companyProductsError } = await supabase
+      .from("product")
+      .select("product_id")
+      .eq("company_id", companyId)
+      .eq("is_active", true);
+
+    if (companyProductsError) {
+      throw new Error(`No se pudieron cargar los productos de la empresa: ${companyProductsError.message}`);
+    }
+
+    scopedProductIds = (companyProductRows ?? [])
+      .map((row) => row.product_id)
+      .filter((value): value is number => typeof value === "number");
+
+    if (scopedProductIds.length === 0) {
+      return { userId, userName, assignedStores: [], storeProducts: [], records: [] };
+    }
+  }
+
+  let relationsQuery = supabase
     .from("products_establishment")
-    .select("establishment_id, product:product_id(product_id, sku, name, is_active)")
+    .select("establishment_id, product:product_id(product_id, sku, name, is_active, company_id)")
     .in("establishment_id", establishmentIds);
+
+  if (scopedProductIds) {
+    relationsQuery = relationsQuery.in("product_id", scopedProductIds);
+  }
+
+  const { data: relationRows, error: relationsError } = await relationsQuery;
 
   if (relationsError) {
     throw new Error(`No se pudieron cargar los productos activos de las tiendas: ${relationsError.message}`);
@@ -889,6 +917,18 @@ async function fetchProductividadData(params: {
     });
   }
 
+  const effectiveAssignedStores = companyId
+    ? assignedStores.filter((store) =>
+        storeProducts.some((product) => product.establishmentId === store.establishmentId)
+      )
+    : assignedStores;
+
+  if (companyId && effectiveAssignedStores.length === 0) {
+    return { userId, userName, assignedStores: [], storeProducts: [], records: [] };
+  }
+
+  const effectiveEstablishmentIds = effectiveAssignedStores.map((store) => store.establishmentId);
+
   const toExclusive = toExclusiveEndDate(to);
   let recordsQuery = supabase
     .from("check_record")
@@ -896,10 +936,18 @@ async function fetchProductividadData(params: {
       "record_id, system_inventory, real_inventory, evidence_num, comments, time_date, product:product_id(product_id, sku, name, company_id, company:company_id(name)), establishment:establishment_id(establishment_id, name, route_id), reporter:user_id(user_id, name)"
     )
     .eq("user_id", userId)
-    .in("establishment_id", establishmentIds)
+    .in("establishment_id", effectiveEstablishmentIds)
     .gte("time_date", `${from}T00:00:00`)
     .order("time_date", { ascending: false })
     .limit(MAX_ROWS);
+
+  if (companyId) {
+    const productIds = storeProducts.map((product) => product.productId);
+    if (productIds.length === 0) {
+      return { userId, userName, assignedStores: [], storeProducts: [], records: [] };
+    }
+    recordsQuery = recordsQuery.in("product_id", productIds);
+  }
 
   if (toExclusive) {
     recordsQuery = recordsQuery.lt("time_date", `${toExclusive}T00:00:00`);
@@ -912,7 +960,7 @@ async function fetchProductividadData(params: {
 
   const scopedRecords = ((recordRows ?? []) as RawRow[]).map(toFlatRow);
 
-  return { userId, userName, assignedStores, storeProducts, records: scopedRecords };
+  return { userId, userName, assignedStores: effectiveAssignedStores, storeProducts, records: scopedRecords };
 }
 
 /* ── Main PDF builder per report type ────────────────────── */
@@ -1099,6 +1147,7 @@ export async function GET(request: Request) {
         userId: filters.userId,
         from: filters.from,
         to: filters.to,
+        companyId: filters.companyId,
       });
 
       pdfBuffer = await buildBrandedPdf(reportType, null, undefined, productividadData);

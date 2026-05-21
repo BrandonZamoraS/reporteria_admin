@@ -39,6 +39,7 @@ function shouldShowCompany(reportType: ReportType) {
     reportType === "completo" ||
     reportType === "ajustes" ||
     reportType === "presentacion" ||
+    reportType === "productividad" ||
     reportType === "productividad_empresa"
   );
 }
