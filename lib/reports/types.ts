@@ -8,6 +8,7 @@ export const REPORT_TYPES = [
   "auditoria",
   "productividad",
   "productividad_empresa",
+  "visitas_ruta",
 ] as const;
 
 export type ReportType = (typeof REPORT_TYPES)[number];
@@ -61,6 +62,12 @@ export const REPORT_DEFINITIONS: Record<ReportType, ReportDefinition> = {
     title: "Productividad por empresa",
     summary: "Resume actividad por empresa segun establecimientos visitados y avance de rutas.",
     info: "Agrupa registros por empresa, muestra establecimientos visitados, rutas involucradas y completitud de ruta en el rango seleccionado.",
+  },
+  visitas_ruta: {
+    type: "visitas_ruta",
+    title: "Visitas por ruta",
+    summary: "Muestra establecimientos visitados y no visitados por producto en un periodo.",
+    info: "Evalua cobertura de establecimientos activos en rutas activas segun los productos activos actualmente asignados.",
   },
 };
 

@@ -31,7 +31,7 @@ function shouldShowUser(reportType: ReportType) {
 }
 
 function shouldShowRoute(reportType: ReportType) {
-  return reportType === "ajustes" || reportType === "productividad_empresa";
+  return reportType === "ajustes" || reportType === "productividad_empresa" || reportType === "visitas_ruta";
 }
 
 function shouldShowCompany(reportType: ReportType) {
@@ -45,7 +45,7 @@ function shouldShowCompany(reportType: ReportType) {
 }
 
 function shouldShowProduct(reportType: ReportType) {
-  return reportType === "completo" || reportType === "ajustes";
+  return reportType === "completo" || reportType === "ajustes" || reportType === "visitas_ruta";
 }
 
 function shouldShowEstablishment(reportType: ReportType) {
@@ -58,7 +58,7 @@ function shouldShowEstablishment(reportType: ReportType) {
 }
 
 function isRequiredProductividadFilter(reportType: ReportType) {
-  return reportType === "productividad";
+  return reportType === "productividad" || reportType === "visitas_ruta";
 }
 
 export function ExportReportButton({
@@ -246,6 +246,23 @@ export function ExportReportButton({
                     options={filteredProductOptions}
                     className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
                   />
+                </label>
+              ) : null}
+
+              {reportType === "visitas_ruta" ? (
+                <label>
+                  <span className="mb-1.5 block text-[12px] font-semibold text-[var(--muted)]">
+                    Estado
+                  </span>
+                  <select
+                    name="visitStatus"
+                    defaultValue="all"
+                    className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
+                  >
+                    <option value="all">Todos</option>
+                    <option value="visited">Visitados</option>
+                    <option value="not_visited">No visitados</option>
+                  </select>
                 </label>
               ) : null}
 

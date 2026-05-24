@@ -15,6 +15,15 @@ import {
   type ProductividadReportData,
   type ProductividadStoreProduct,
 } from "@/lib/reports/productividad-report";
+import {
+  buildVisitasRutaSummary,
+  getVisitasRutaValidationError,
+  parseVisitStatus,
+  type VisitasRutaProduct,
+  type VisitasRutaRecord,
+  type VisitasRutaReportData,
+  type VisitasRutaStore,
+} from "@/lib/reports/visitas-ruta-report";
 import { isReportType, reportsForRole, type ReportType } from "@/lib/reports/types";
 import {
   fetchEvidenceRows,
@@ -600,6 +609,48 @@ function buildProductividadEmpresa(
   );
 }
 
+function buildVisitasRuta(doc: PDFKit.PDFDocument, startY: number, data: VisitasRutaReportData) {
+  const summary = buildVisitasRutaSummary(data);
+  let y = drawStatBoxes(doc, startY, [
+    { label: "Establecimientos", value: String(summary.totalStores) },
+    { label: "Visitados", value: String(summary.visitedStores) },
+    { label: "No visitados", value: String(summary.notVisitedStores) },
+    { label: "% cumplimiento", value: `${summary.completionRate.toFixed(1)}%` },
+  ]);
+
+  y = drawSectionTitle(doc, y, "Cobertura de establecimientos");
+  if (summary.stores.length === 0) {
+    drawText(doc, "Los filtros seleccionados no producen establecimientos para exportar.", doc.page.margins.left, y, {
+      font: "Helvetica",
+      size: 10,
+      color: BRAND.muted,
+    });
+    return;
+  }
+
+  const usable = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  drawTable(
+    doc,
+    y,
+    [
+      { header: "Establecimiento", width: usable * 0.22 },
+      { header: "Ruta", width: usable * 0.16 },
+      { header: "Estado", width: usable * 0.13, align: "center" },
+      { header: "Productos registrados/activos", width: usable * 0.17, align: "center" },
+      { header: "Registros", width: usable * 0.10, align: "center" },
+      { header: "Faltantes", width: usable * 0.22 },
+    ],
+    summary.stores.map((store) => [
+      store.establishmentName,
+      store.routeName,
+      store.status,
+      `${store.registeredProducts}/${store.activeProducts}`,
+      String(store.recordCount),
+      store.note ?? (store.missingProducts.map((product) => product.productSku ?? product.productName).join(", ") || "-"),
+    ])
+  );
+}
+
 async function fetchRouteScopedEstablishments(params: {
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
   routeIds: number[];
@@ -963,9 +1014,146 @@ async function fetchProductividadData(params: {
   return { userId, userName, assignedStores: effectiveAssignedStores, storeProducts, records: scopedRecords };
 }
 
+async function fetchVisitasRutaData(params: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  from: string;
+  to: string;
+  routeId: number | null;
+  productId: number | null;
+  visitStatus: NonNullable<ReturnType<typeof parseVisitStatus>>;
+}): Promise<VisitasRutaReportData> {
+  const { supabase, from, to, routeId, productId, visitStatus } = params;
+  let routesQuery = supabase.from("route").select("route_id, nombre").eq("is_active", true);
+  if (routeId) routesQuery = routesQuery.eq("route_id", routeId);
+
+  const { data: routeRows, error: routesError } = await routesQuery.order("nombre", { ascending: true });
+  if (routesError) throw new Error(`No se pudieron cargar las rutas activas: ${routesError.message}`);
+
+  const routeNames = new Map<number, string>();
+  for (const row of routeRows ?? []) {
+    if (typeof row.route_id === "number") routeNames.set(row.route_id, row.nombre ?? `Ruta ${row.route_id}`);
+  }
+  const routeIds = [...routeNames.keys()];
+  if (routeIds.length === 0) {
+    return {
+      stores: [], products: [], records: [], productId, visitStatus, from, to,
+      routeLabel: routeId ? `Ruta ${routeId}` : "Todas las rutas activas",
+      productLabel: productId ? `Producto ${productId}` : "Todos los productos activos",
+    };
+  }
+
+  const { data: establishmentRows, error: establishmentsError } = await supabase
+    .from("establishment")
+    .select("establishment_id, name, route_id")
+    .in("route_id", routeIds)
+    .eq("is_active", true);
+  if (establishmentsError) {
+    throw new Error(`No se pudieron cargar los establecimientos activos: ${establishmentsError.message}`);
+  }
+
+  const stores: VisitasRutaStore[] = (establishmentRows ?? [])
+    .filter((row): row is { establishment_id: number; name: string | null; route_id: number } =>
+      typeof row.establishment_id === "number" && typeof row.route_id === "number"
+    )
+    .map((row) => ({
+      establishmentId: row.establishment_id,
+      establishmentName: row.name ?? `Establecimiento ${row.establishment_id}`,
+      routeId: row.route_id,
+      routeName: routeNames.get(row.route_id) ?? `Ruta ${row.route_id}`,
+    }));
+  const establishmentIds = stores.map((store) => store.establishmentId);
+  if (establishmentIds.length === 0) {
+    return {
+      stores, products: [], records: [], productId, visitStatus, from, to,
+      routeLabel: routeId ? routeNames.get(routeId) ?? `Ruta ${routeId}` : "Todas las rutas activas",
+      productLabel: productId ? `Producto ${productId}` : "Todos los productos activos",
+    };
+  }
+
+  let productRelationQuery = supabase
+    .from("products_establishment")
+    .select("establishment_id, product:product_id(product_id, name, sku, is_active)")
+    .in("establishment_id", establishmentIds);
+  if (productId) productRelationQuery = productRelationQuery.eq("product_id", productId);
+  const { data: relationRows, error: relationError } = await productRelationQuery;
+  if (relationError) throw new Error(`No se pudieron cargar productos activos: ${relationError.message}`);
+
+  const products: VisitasRutaProduct[] = [];
+  for (const row of relationRows ?? []) {
+    const product = Array.isArray(row.product) ? row.product[0] : row.product;
+    if (typeof row.establishment_id !== "number" || !product || product.is_active !== true) continue;
+    if (typeof product.product_id !== "number") continue;
+    products.push({
+      establishmentId: row.establishment_id,
+      productId: product.product_id,
+      productName: product.name ?? `Producto ${product.product_id}`,
+      productSku: product.sku ?? null,
+    });
+  }
+
+  const productIds = [...new Set(products.map((product) => product.productId))];
+  const scopedEstablishmentIds = productId
+    ? [...new Set(products.map((product) => product.establishmentId))]
+    : establishmentIds;
+  const records: VisitasRutaRecord[] = [];
+  const seenRecordIds = new Set<number>();
+  if (scopedEstablishmentIds.length > 0 && productIds.length > 0) {
+    const toExclusive = toExclusiveEndDate(to)!;
+    const pageSize = 1000;
+    for (let start = 0; ; start += pageSize) {
+      const { data: pageRows, error: recordsError } = await supabase
+        .from("check_record")
+        .select("record_id, establishment_id, product_id")
+        .in("establishment_id", scopedEstablishmentIds)
+        .in("product_id", productIds)
+        .gte("time_date", `${from}T00:00:00`)
+        .lt("time_date", `${toExclusive}T00:00:00`)
+        .order("record_id", { ascending: true })
+        .range(start, start + pageSize - 1);
+      if (recordsError) throw new Error(`No se pudo cargar cobertura de visitas: ${recordsError.message}`);
+
+      for (const row of pageRows ?? []) {
+        if (
+          typeof row.record_id === "number" &&
+          typeof row.establishment_id === "number" &&
+          typeof row.product_id === "number" &&
+          !seenRecordIds.has(row.record_id)
+        ) {
+          seenRecordIds.add(row.record_id);
+          records.push({
+            recordId: row.record_id,
+            establishmentId: row.establishment_id,
+            productId: row.product_id,
+          });
+        }
+      }
+      if ((pageRows ?? []).length < pageSize) break;
+    }
+  }
+
+  const selectedProduct = productId ? products.find((product) => product.productId === productId) : null;
+  return {
+    stores,
+    products,
+    records,
+    productId,
+    visitStatus,
+    from,
+    to,
+    routeLabel: routeId ? routeNames.get(routeId) ?? `Ruta ${routeId}` : "Todas las rutas activas",
+    productLabel: selectedProduct
+      ? selectedProduct.productSku
+        ? `${selectedProduct.productName} (${selectedProduct.productSku})`
+        : selectedProduct.productName
+      : productId
+        ? `Producto ${productId}`
+        : "Todos los productos activos",
+  };
+}
+
 /* ── Main PDF builder per report type ────────────────────── */
 function buildBrandedPdf(
-  reportType: Exclude<ReportType, "auditoria" | "productividad" | "productividad_empresa">,
+  reportType: Exclude<ReportType, "auditoria" | "productividad" | "productividad_empresa" | "visitas_ruta">,
   rows: FlatRow[]
 ): Promise<Buffer>;
 function buildBrandedPdf(reportType: "auditoria", rows: null, auditData: AuditData): Promise<Buffer>;
@@ -983,11 +1171,20 @@ function buildBrandedPdf(
   companyScopedEstablishments: CompanyProductividadScopeEstablishment[]
 ): Promise<Buffer>;
 function buildBrandedPdf(
+  reportType: "visitas_ruta",
+  rows: null,
+  auditData: undefined,
+  productividadData: undefined,
+  companyScopedEstablishments: undefined,
+  visitasRutaData: VisitasRutaReportData
+): Promise<Buffer>;
+function buildBrandedPdf(
   reportType: ReportType,
   rows: FlatRow[] | null,
   auditData?: AuditData,
   productividadData?: ProductividadReportData,
-  companyScopedEstablishments?: CompanyProductividadScopeEstablishment[]
+  companyScopedEstablishments?: CompanyProductividadScopeEstablishment[],
+  visitasRutaData?: VisitasRutaReportData
 ): Promise<Buffer> {
   const doc = new PDFDocument({
     size: "A4",
@@ -1001,15 +1198,24 @@ function buildBrandedPdf(
 
   const title = reportTitle(reportType);
   const now = formatDateTime(new Date().toISOString());
+  const visitStatusLabel = visitasRutaData?.visitStatus === "visited"
+    ? "Visitados"
+    : visitasRutaData?.visitStatus === "not_visited"
+      ? "No visitados"
+      : "Todos";
   const totalItems =
     reportType === "auditoria" && auditData
       ? auditData.actions.length + auditData.sessions.length
       : reportType === "productividad" && productividadData
         ? productividadData.records.length
+      : reportType === "visitas_ruta" && visitasRutaData
+        ? visitasRutaData.records.length
       : (rows?.length ?? 0);
   const subtitle =
     reportType === "productividad" && productividadData
       ? `Usuario: ${productividadData.userName}  •  Generado: ${now}  •  ${totalItems} registros analizados`
+      : reportType === "visitas_ruta" && visitasRutaData
+        ? `${visitasRutaData.from} a ${visitasRutaData.to} | ${visitasRutaData.routeLabel} | ${visitasRutaData.productLabel} | Estado: ${visitStatusLabel}`
       : `Generado: ${now}  •  ${totalItems} registros analizados`;
   const y = drawHeader(doc, title, subtitle);
 
@@ -1034,6 +1240,9 @@ function buildBrandedPdf(
       break;
     case "productividad_empresa":
       buildProductividadEmpresa(doc, y, rows!, companyScopedEstablishments ?? []);
+      break;
+    case "visitas_ruta":
+      buildVisitasRuta(doc, y, visitasRutaData!);
       break;
     default:
       break;
@@ -1079,6 +1288,16 @@ export async function GET(request: Request) {
   }
 
   const filters = parseReportFilters(url.searchParams);
+  const visitStatus = parseVisitStatus(url.searchParams.get("visitStatus"));
+
+  if (reportType === "visitas_ruta") {
+    const validationError = getVisitasRutaValidationError({
+      from: filters.from,
+      to: filters.to,
+      visitStatus: url.searchParams.get("visitStatus"),
+    });
+    if (validationError) return new Response(validationError, { status: 400 });
+  }
 
   try {
     let pdfBuffer: Buffer;
@@ -1151,6 +1370,16 @@ export async function GET(request: Request) {
       });
 
       pdfBuffer = await buildBrandedPdf(reportType, null, undefined, productividadData);
+    } else if (reportType === "visitas_ruta") {
+      const visitasRutaData = await fetchVisitasRutaData({
+        supabase,
+        from: filters.from!,
+        to: filters.to!,
+        routeId: filters.routeId,
+        productId: filters.productId,
+        visitStatus: visitStatus!,
+      });
+      pdfBuffer = await buildBrandedPdf(reportType, null, undefined, undefined, undefined, visitasRutaData);
     } else {
       /* ── Standard report path ──────────────────────────── */
       const { rows } = await fetchReportRows({
