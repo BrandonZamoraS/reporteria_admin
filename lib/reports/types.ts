@@ -66,8 +66,8 @@ export const REPORT_DEFINITIONS: Record<ReportType, ReportDefinition> = {
   visitas_ruta: {
     type: "visitas_ruta",
     title: "Visitas por ruta",
-    summary: "Muestra establecimientos visitados y no visitados por producto en un periodo.",
-    info: "Evalua cobertura de establecimientos activos en rutas activas segun los productos activos actualmente asignados.",
+    summary: "Muestra establecimientos completados e incompletos por empresa y producto en un periodo.",
+    info: "Evalua cobertura completa de establecimientos en rutas activas segun los productos activos actualmente asignados.",
   },
 };
 

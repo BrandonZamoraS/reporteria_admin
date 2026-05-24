@@ -1,4 +1,4 @@
-export type VisitStatus = "all" | "visited" | "not_visited";
+export type CompletionStatus = "all" | "completed" | "incomplete";
 
 export type VisitasRutaStore = {
   establishmentId: number;
@@ -21,7 +21,7 @@ export type VisitasRutaRecord = {
 };
 
 export type VisitasRutaStoreSummary = VisitasRutaStore & {
-  status: "Visitado" | "No visitado";
+  status: "Completado" | "Incompleto";
   activeProducts: number;
   registeredProducts: number;
   missingProducts: VisitasRutaProduct[];
@@ -31,8 +31,8 @@ export type VisitasRutaStoreSummary = VisitasRutaStore & {
 
 export type VisitasRutaSummary = {
   totalStores: number;
-  visitedStores: number;
-  notVisitedStores: number;
+  completedStores: number;
+  incompleteStores: number;
   completionRate: number;
   stores: VisitasRutaStoreSummary[];
 };
@@ -42,16 +42,16 @@ export type VisitasRutaReportData = {
   products: VisitasRutaProduct[];
   records: VisitasRutaRecord[];
   productId: number | null;
-  visitStatus: VisitStatus;
+  completionStatus: CompletionStatus;
   from: string;
   to: string;
-  routeLabel: string;
+  companyLabel: string;
   productLabel: string;
 };
 
-export function parseVisitStatus(value: string | null): VisitStatus | null {
+export function parseCompletionStatus(value: string | null): CompletionStatus | null {
   if (!value) return "all";
-  if (value === "all" || value === "visited" || value === "not_visited") return value;
+  if (value === "all" || value === "completed" || value === "incomplete") return value;
   return null;
 }
 
@@ -64,7 +64,7 @@ export function isIsoDate(value: string | null): value is string {
 export function getVisitasRutaValidationError(params: {
   from: string | null;
   to: string | null;
-  visitStatus: string | null;
+  completionStatus: string | null;
 }): string | null {
   if (!params.from || !params.to) {
     return "El reporte de visitas por ruta requiere Desde y Hasta.";
@@ -72,8 +72,8 @@ export function getVisitasRutaValidationError(params: {
   if (!isIsoDate(params.from) || !isIsoDate(params.to) || params.from > params.to) {
     return "El rango de fechas de visitas por ruta es invalido.";
   }
-  if (!parseVisitStatus(params.visitStatus)) {
-    return "El estado de visitas por ruta es invalido.";
+  if (!parseCompletionStatus(params.completionStatus)) {
+    return "El estado de completitud es invalido.";
   }
   return null;
 }
@@ -83,7 +83,7 @@ export function buildVisitasRutaSummary(data: {
   products: VisitasRutaProduct[];
   records: VisitasRutaRecord[];
   productId: number | null;
-  visitStatus: VisitStatus;
+  completionStatus: CompletionStatus;
 }): VisitasRutaSummary {
   const productsByStore = new Map<number, VisitasRutaProduct[]>();
   for (const product of data.products) {
@@ -114,11 +114,11 @@ export function buildVisitasRutaSummary(data: {
     const registeredIds = registeredByStore.get(store.establishmentId) ?? new Set<number>();
     const registeredProducts = products.filter((product) => registeredIds.has(product.productId));
     const missingProducts = products.filter((product) => !registeredIds.has(product.productId));
-    const visited = products.length > 0 && missingProducts.length === 0;
+    const completed = products.length > 0 && missingProducts.length === 0;
 
     return {
       ...store,
-      status: visited ? "Visitado" : "No visitado",
+      status: completed ? "Completado" : "Incompleto",
       activeProducts: products.length,
       registeredProducts: registeredProducts.length,
       missingProducts,
@@ -129,21 +129,21 @@ export function buildVisitasRutaSummary(data: {
 
   const stores = classified
     .filter((store) => {
-      if (data.visitStatus === "visited") return store.status === "Visitado";
-      if (data.visitStatus === "not_visited") return store.status === "No visitado";
+      if (data.completionStatus === "completed") return store.status === "Completado";
+      if (data.completionStatus === "incomplete") return store.status === "Incompleto";
       return true;
     })
     .sort((left, right) => {
-      if (left.status !== right.status) return left.status === "No visitado" ? -1 : 1;
+      if (left.status !== right.status) return left.status === "Incompleto" ? -1 : 1;
       return left.establishmentName.localeCompare(right.establishmentName, "es");
     });
-  const visitedStores = stores.filter((store) => store.status === "Visitado").length;
+  const completedStores = stores.filter((store) => store.status === "Completado").length;
 
   return {
     totalStores: stores.length,
-    visitedStores,
-    notVisitedStores: stores.length - visitedStores,
-    completionRate: stores.length ? (visitedStores / stores.length) * 100 : 0,
+    completedStores,
+    incompleteStores: stores.length - completedStores,
+    completionRate: stores.length ? (completedStores / stores.length) * 100 : 0,
     stores,
   };
 }

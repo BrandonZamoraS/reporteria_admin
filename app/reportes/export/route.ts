@@ -18,7 +18,7 @@ import {
 import {
   buildVisitasRutaSummary,
   getVisitasRutaValidationError,
-  parseVisitStatus,
+  parseCompletionStatus,
   type VisitasRutaProduct,
   type VisitasRutaRecord,
   type VisitasRutaReportData,
@@ -613,8 +613,8 @@ function buildVisitasRuta(doc: PDFKit.PDFDocument, startY: number, data: Visitas
   const summary = buildVisitasRutaSummary(data);
   let y = drawStatBoxes(doc, startY, [
     { label: "Establecimientos", value: String(summary.totalStores) },
-    { label: "Visitados", value: String(summary.visitedStores) },
-    { label: "No visitados", value: String(summary.notVisitedStores) },
+    { label: "Completados", value: String(summary.completedStores) },
+    { label: "Incompletos", value: String(summary.incompleteStores) },
     { label: "% cumplimiento", value: `${summary.completionRate.toFixed(1)}%` },
   ]);
 
@@ -1018,13 +1018,12 @@ async function fetchVisitasRutaData(params: {
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
   from: string;
   to: string;
-  routeId: number | null;
+  companyId: number | null;
   productId: number | null;
-  visitStatus: NonNullable<ReturnType<typeof parseVisitStatus>>;
+  completionStatus: NonNullable<ReturnType<typeof parseCompletionStatus>>;
 }): Promise<VisitasRutaReportData> {
-  const { supabase, from, to, routeId, productId, visitStatus } = params;
+  const { supabase, from, to, companyId, productId, completionStatus } = params;
   let routesQuery = supabase.from("route").select("route_id, nombre").eq("is_active", true);
-  if (routeId) routesQuery = routesQuery.eq("route_id", routeId);
 
   const { data: routeRows, error: routesError } = await routesQuery.order("nombre", { ascending: true });
   if (routesError) throw new Error(`No se pudieron cargar las rutas activas: ${routesError.message}`);
@@ -1036,8 +1035,8 @@ async function fetchVisitasRutaData(params: {
   const routeIds = [...routeNames.keys()];
   if (routeIds.length === 0) {
     return {
-      stores: [], products: [], records: [], productId, visitStatus, from, to,
-      routeLabel: routeId ? `Ruta ${routeId}` : "Todas las rutas activas",
+      stores: [], products: [], records: [], productId, completionStatus, from, to,
+      companyLabel: companyId ? `Empresa ${companyId}` : "Todas las empresas",
       productLabel: productId ? `Producto ${productId}` : "Todos los productos activos",
     };
   }
@@ -1064,15 +1063,15 @@ async function fetchVisitasRutaData(params: {
   const establishmentIds = stores.map((store) => store.establishmentId);
   if (establishmentIds.length === 0) {
     return {
-      stores, products: [], records: [], productId, visitStatus, from, to,
-      routeLabel: routeId ? routeNames.get(routeId) ?? `Ruta ${routeId}` : "Todas las rutas activas",
+      stores, products: [], records: [], productId, completionStatus, from, to,
+      companyLabel: companyId ? `Empresa ${companyId}` : "Todas las empresas",
       productLabel: productId ? `Producto ${productId}` : "Todos los productos activos",
     };
   }
 
   let productRelationQuery = supabase
     .from("products_establishment")
-    .select("establishment_id, product:product_id(product_id, name, sku, is_active)")
+    .select("establishment_id, product:product_id(product_id, name, sku, is_active, company_id, company:company_id(name))")
     .in("establishment_id", establishmentIds);
   if (productId) productRelationQuery = productRelationQuery.eq("product_id", productId);
   const { data: relationRows, error: relationError } = await productRelationQuery;
@@ -1083,6 +1082,7 @@ async function fetchVisitasRutaData(params: {
     const product = Array.isArray(row.product) ? row.product[0] : row.product;
     if (typeof row.establishment_id !== "number" || !product || product.is_active !== true) continue;
     if (typeof product.product_id !== "number") continue;
+    if (companyId && product.company_id !== companyId) continue;
     products.push({
       establishmentId: row.establishment_id,
       productId: product.product_id,
@@ -1091,10 +1091,13 @@ async function fetchVisitasRutaData(params: {
     });
   }
 
+  const effectiveStores = companyId
+    ? stores.filter((store) => products.some((product) => product.establishmentId === store.establishmentId))
+    : stores;
   const productIds = [...new Set(products.map((product) => product.productId))];
   const scopedEstablishmentIds = productId
     ? [...new Set(products.map((product) => product.establishmentId))]
-    : establishmentIds;
+    : effectiveStores.map((store) => store.establishmentId);
   const records: VisitasRutaRecord[] = [];
   const seenRecordIds = new Set<number>();
   if (scopedEstablishmentIds.length > 0 && productIds.length > 0) {
@@ -1132,15 +1135,22 @@ async function fetchVisitasRutaData(params: {
   }
 
   const selectedProduct = productId ? products.find((product) => product.productId === productId) : null;
+  const selectedCompanyRef = companyId
+    ? (relationRows ?? []).map((row) => {
+        const product = Array.isArray(row.product) ? row.product[0] : row.product;
+        if (!product || product.company_id !== companyId) return null;
+        return Array.isArray(product.company) ? product.company[0] : product.company;
+      }).find((company) => company?.name)
+    : null;
   return {
-    stores,
+    stores: effectiveStores,
     products,
     records,
     productId,
-    visitStatus,
+    completionStatus,
     from,
     to,
-    routeLabel: routeId ? routeNames.get(routeId) ?? `Ruta ${routeId}` : "Todas las rutas activas",
+    companyLabel: companyId ? selectedCompanyRef?.name ?? `Empresa ${companyId}` : "Todas las empresas",
     productLabel: selectedProduct
       ? selectedProduct.productSku
         ? `${selectedProduct.productName} (${selectedProduct.productSku})`
@@ -1198,10 +1208,10 @@ function buildBrandedPdf(
 
   const title = reportTitle(reportType);
   const now = formatDateTime(new Date().toISOString());
-  const visitStatusLabel = visitasRutaData?.visitStatus === "visited"
-    ? "Visitados"
-    : visitasRutaData?.visitStatus === "not_visited"
-      ? "No visitados"
+  const completionStatusLabel = visitasRutaData?.completionStatus === "completed"
+    ? "Completados"
+    : visitasRutaData?.completionStatus === "incomplete"
+      ? "Incompletos"
       : "Todos";
   const totalItems =
     reportType === "auditoria" && auditData
@@ -1215,7 +1225,7 @@ function buildBrandedPdf(
     reportType === "productividad" && productividadData
       ? `Usuario: ${productividadData.userName}  •  Generado: ${now}  •  ${totalItems} registros analizados`
       : reportType === "visitas_ruta" && visitasRutaData
-        ? `${visitasRutaData.from} a ${visitasRutaData.to} | ${visitasRutaData.routeLabel} | ${visitasRutaData.productLabel} | Estado: ${visitStatusLabel}`
+        ? `${visitasRutaData.from} a ${visitasRutaData.to} | ${visitasRutaData.companyLabel} | ${visitasRutaData.productLabel} | Estado: ${completionStatusLabel}`
       : `Generado: ${now}  •  ${totalItems} registros analizados`;
   const y = drawHeader(doc, title, subtitle);
 
@@ -1288,13 +1298,13 @@ export async function GET(request: Request) {
   }
 
   const filters = parseReportFilters(url.searchParams);
-  const visitStatus = parseVisitStatus(url.searchParams.get("visitStatus"));
+  const completionStatus = parseCompletionStatus(url.searchParams.get("completionStatus"));
 
   if (reportType === "visitas_ruta") {
     const validationError = getVisitasRutaValidationError({
       from: filters.from,
       to: filters.to,
-      visitStatus: url.searchParams.get("visitStatus"),
+      completionStatus: url.searchParams.get("completionStatus"),
     });
     if (validationError) return new Response(validationError, { status: 400 });
   }
@@ -1375,9 +1385,9 @@ export async function GET(request: Request) {
         supabase,
         from: filters.from!,
         to: filters.to!,
-        routeId: filters.routeId,
+        companyId: filters.companyId,
         productId: filters.productId,
-        visitStatus: visitStatus!,
+        completionStatus: completionStatus!,
       });
       pdfBuffer = await buildBrandedPdf(reportType, null, undefined, undefined, undefined, visitasRutaData);
     } else {

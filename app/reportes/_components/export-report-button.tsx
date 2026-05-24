@@ -31,7 +31,7 @@ function shouldShowUser(reportType: ReportType) {
 }
 
 function shouldShowRoute(reportType: ReportType) {
-  return reportType === "ajustes" || reportType === "productividad_empresa" || reportType === "visitas_ruta";
+  return reportType === "ajustes" || reportType === "productividad_empresa";
 }
 
 function shouldShowCompany(reportType: ReportType) {
@@ -40,7 +40,8 @@ function shouldShowCompany(reportType: ReportType) {
     reportType === "ajustes" ||
     reportType === "presentacion" ||
     reportType === "productividad" ||
-    reportType === "productividad_empresa"
+    reportType === "productividad_empresa" ||
+    reportType === "visitas_ruta"
   );
 }
 
@@ -255,13 +256,13 @@ export function ExportReportButton({
                     Estado
                   </span>
                   <select
-                    name="visitStatus"
+                    name="completionStatus"
                     defaultValue="all"
                     className="h-10 w-full rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
                   >
                     <option value="all">Todos</option>
-                    <option value="visited">Visitados</option>
-                    <option value="not_visited">No visitados</option>
+                    <option value="completed">Completados</option>
+                    <option value="incomplete">Incompletos</option>
                   </select>
                 </label>
               ) : null}
