@@ -779,9 +779,10 @@ async function fetchCompanyProductividadScope(params: {
 
   let establishmentsQuery = supabase
     .from("establishment")
-    .select("establishment_id, route_id")
+    .select("establishment_id, route_id, is_active")
     .in("establishment_id", establishmentIds)
-    .not("route_id", "is", null);
+    .not("route_id", "is", null)
+    .eq("is_active", true);
 
   if (routeId) {
     establishmentsQuery = establishmentsQuery.eq("route_id", routeId);
