@@ -38,13 +38,17 @@ export default async function EditProductPage({ params }: PageProps) {
 
   const loadedProduct = productResult.data;
   const productError = productResult.error;
+  const companiesError = companiesResult.error;
+  const establishmentsError = establishmentsResult.error;
+  const selectedRowsError = selectedRowsResult.error;
+
+  if (productError || companiesError || establishmentsError || selectedRowsError || !loadedProduct) {
+    notFound();
+  }
+
   const companiesData = companiesResult.data ?? [];
   const establishmentsData = establishmentsResult.data ?? [];
   const selectedRows = selectedRowsResult.data ?? [];
-
-  if (productError || !loadedProduct) {
-    notFound();
-  }
 
   const establishmentOptions = establishmentsData.map((establishment) => {
     const routeData = establishment.route as { nombre?: string } | Array<{ nombre?: string }> | null;
@@ -64,6 +68,8 @@ export default async function EditProductPage({ params }: PageProps) {
     .map((row) => row.establishment_id)
     .filter((value): value is number => Number.isInteger(value));
 
+  const uniqueInitialSelectedEstablishmentIds = Array.from(new Set(initialSelectedEstablishmentIds));
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <header className="rounded-[12px] bg-[#DDE2DD] p-3">
@@ -77,7 +83,7 @@ export default async function EditProductPage({ params }: PageProps) {
         action={updateProductAction}
         companies={companiesData}
         establishmentOptions={establishmentOptions}
-        initialSelectedEstablishmentIds={initialSelectedEstablishmentIds}
+        initialSelectedEstablishmentIds={uniqueInitialSelectedEstablishmentIds}
       />
     </div>
   );
