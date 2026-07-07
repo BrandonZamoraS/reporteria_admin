@@ -16,18 +16,53 @@ export default async function EditProductPage({ params }: PageProps) {
     notFound();
   }
 
-  const [{ data: product, error }, { data: companies }] = await Promise.all([
+  const [productResult, companiesResult, establishmentsResult, selectedRowsResult] = await Promise.all([
     supabase
       .from("product")
       .select("product_id, sku, name, company_id, is_active")
       .eq("product_id", parsedProductId)
       .maybeSingle(),
-    supabase.from("company").select("company_id, name, is_active").order("name", { ascending: true }),
+    supabase
+      .from("company")
+      .select("company_id, name, is_active")
+      .order("name", { ascending: true }),
+    supabase
+      .from("establishment")
+      .select("establishment_id, name, is_active, route:route_id(nombre)")
+      .order("name", { ascending: true }),
+    supabase
+      .from("products_establishment")
+      .select("establishment_id")
+      .eq("product_id", parsedProductId),
   ]);
 
-  if (error || !product) {
+  const loadedProduct = productResult.data;
+  const productError = productResult.error;
+  const companiesData = companiesResult.data ?? [];
+  const establishmentsData = establishmentsResult.data ?? [];
+  const selectedRows = selectedRowsResult.data ?? [];
+
+  if (productError || !loadedProduct) {
     notFound();
   }
+
+  const establishmentOptions = establishmentsData.map((establishment) => {
+    const routeData = establishment.route as { nombre?: string } | Array<{ nombre?: string }> | null;
+    const routeName = Array.isArray(routeData)
+      ? routeData[0]?.nombre ?? null
+      : routeData?.nombre ?? null;
+
+    return {
+      establishment_id: establishment.establishment_id,
+      name: establishment.name,
+      route_name: routeName,
+      is_active: establishment.is_active,
+    };
+  });
+
+  const initialSelectedEstablishmentIds = selectedRows
+    .map((row) => row.establishment_id)
+    .filter((value): value is number => Number.isInteger(value));
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
@@ -38,9 +73,11 @@ export default async function EditProductPage({ params }: PageProps) {
 
       <ProductForm
         mode="edit"
-        product={product}
+        product={loadedProduct}
         action={updateProductAction}
-        companies={companies ?? []}
+        companies={companiesData}
+        establishmentOptions={establishmentOptions}
+        initialSelectedEstablishmentIds={initialSelectedEstablishmentIds}
       />
     </div>
   );

@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdaptiveSelect } from "@/app/_components/adaptive-select";
 import type { ProductFormState } from "@/app/productos/actions";
+import {
+  ProductEstablishmentsPicker,
+  type ProductEstablishmentOption,
+} from "@/app/productos/_components/product-establishments-picker";
 
 type Product = {
   product_id: number;
@@ -24,6 +28,8 @@ type ProductFormProps = {
   mode: "create" | "edit";
   product?: Product;
   companies: CompanyOption[];
+  establishmentOptions?: ProductEstablishmentOption[];
+  initialSelectedEstablishmentIds?: number[];
   action: (
     prevState: ProductFormState,
     formData: FormData
@@ -32,13 +38,34 @@ type ProductFormProps = {
 
 const INITIAL_STATE: ProductFormState = { error: null };
 
-export function ProductForm({ mode, product, companies, action }: ProductFormProps) {
+export function ProductForm({
+  mode,
+  product,
+  companies,
+  establishmentOptions = [],
+  initialSelectedEstablishmentIds = [],
+  action,
+}: ProductFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_STATE);
+  const [selectedEstablishmentIds, setSelectedEstablishmentIds] = useState(
+    initialSelectedEstablishmentIds
+  );
+
   useEffect(() => { if (state.error) toast.error(state.error); }, [state]);
 
   return (
     <form action={formAction} className="rounded-[12px] border border-[var(--border)] bg-white p-4">
       {mode === "edit" ? <input type="hidden" name="productId" value={product?.product_id} /> : null}
+      {mode === "edit"
+        ? selectedEstablishmentIds.map((establishmentId) => (
+            <input
+              key={establishmentId}
+              type="hidden"
+              name="establishmentIds"
+              value={establishmentId}
+            />
+          ))
+        : null}
 
       <div className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -101,6 +128,16 @@ export function ProductForm({ mode, product, companies, action }: ProductFormPro
           </label>
         </div>
       </div>
+
+      {mode === "edit" ? (
+        <div className="mt-4">
+          <ProductEstablishmentsPicker
+            options={establishmentOptions}
+            selectedIds={selectedEstablishmentIds}
+            onSelectedIdsChange={setSelectedEstablishmentIds}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 flex justify-end gap-2">
         <Link
