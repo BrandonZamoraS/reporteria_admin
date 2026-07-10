@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MAX_DYNAMIC_REPORT_PHOTOS } from "@/lib/reports/dynamic-report-types";
 
@@ -100,6 +100,18 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
   const [newPhotos, setNewPhotos] = useState<Blob[]>([]);
   const [compressing, setCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fetchRequestIdRef = useRef(0);
+
+  // Create object URLs for photo previews and revoke on cleanup
+  const photoPreviewUrls = useMemo(() => {
+    return newPhotos.map((photo) => URL.createObjectURL(photo));
+  }, [newPhotos]);
+
+  useEffect(() => {
+    return () => {
+      photoPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [photoPreviewUrls]);
 
   /* ── Company selection ────────────────────────────────── */
   const handleCompanyChange = useCallback(
@@ -112,11 +124,15 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
       setEstablishments([]);
 
       if (id) {
+        const requestId = ++fetchRequestIdRef.current;
         setEstablishmentsLoading(true);
         try {
           const response = await fetch(
             `/reportes/dinamico/establecimientos?companyId=${id}`
           );
+          // Ignore stale responses
+          if (requestId !== fetchRequestIdRef.current) return;
+
           if (response.ok) {
             const data = await response.json();
             const raw = data.establishments as Array<{ id: number; name?: string; label?: string }>;
@@ -130,9 +146,12 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
             toast.error("No se pudieron cargar los establecimientos.");
           }
         } catch {
+          if (requestId !== fetchRequestIdRef.current) return;
           toast.error("Error al conectar con el servidor.");
         } finally {
-          setEstablishmentsLoading(false);
+          if (requestId === fetchRequestIdRef.current) {
+            setEstablishmentsLoading(false);
+          }
         }
       }
     },
@@ -403,7 +422,7 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
                   {newPhotos.map((photo, i) => (
                     <div key={i} className="relative">
                       <img
-                        src={URL.createObjectURL(photo)}
+                        src={photoPreviewUrls[i]}
                         alt={`Foto ${i + 1}`}
                         className="h-20 w-20 rounded-[6px] border border-[var(--border)] object-cover"
                       />

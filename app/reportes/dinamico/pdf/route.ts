@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 /* ── Helper: format current date ──────────────────────────── */
 function formatNow(): string {
   const now = new Date();
-  return now.toLocaleDateString("es-MX", {
+  return now.toLocaleString("es-MX", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -20,11 +20,17 @@ function formatNow(): string {
   });
 }
 
-/* ── Helper: safe integer parse ───────────────────────────── */
-function safeParseInt(value: FormDataEntryValue | null): number | null {
+/* ── Helper: safe positive integer parse ──────────────────── */
+function safeParsePositiveInt(value: FormDataEntryValue | null): number | null {
   if (value === null || typeof value !== "string") return null;
   const num = Number(value);
-  return Number.isInteger(num) ? num : null;
+  return Number.isInteger(num) && num > 0 ? num : null;
+}
+
+/* ── Helper: safe string extraction ───────────────────────── */
+function safeGetString(value: FormDataEntryValue | null, fallback: string = ""): string {
+  if (value === null || typeof value !== "string") return fallback;
+  return value;
 }
 
 export async function POST(request: NextRequest) {
@@ -51,10 +57,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "FormData invalido" }, { status: 400 });
   }
 
-  const companyId = safeParseInt(formData.get("companyId"));
-  const companyName = (formData.get("companyName") as string) ?? "Sin empresa";
-  const description = (formData.get("description") as string) ?? "";
-  const sectionCount = safeParseInt(formData.get("sectionCount")) ?? 0;
+  const companyId = safeParsePositiveInt(formData.get("companyId"));
+  const companyName = safeGetString(formData.get("companyName"), "Sin empresa");
+  const description = safeGetString(formData.get("description"), "");
+  const sectionCount = safeParsePositiveInt(formData.get("sectionCount")) ?? 0;
 
   if (!companyId) {
     return NextResponse.json({ error: "Empresa requerida" }, { status: 400 });
@@ -71,10 +77,12 @@ export async function POST(request: NextRequest) {
   const sections: DynamicReportSectionInput[] = [];
 
   for (let i = 0; i < sectionCount; i++) {
-    const establishmentId = safeParseInt(formData.get(`section.${i}.establishmentId`));
-    const establishmentName =
-      (formData.get(`section.${i}.establishmentName`) as string) ?? `Establecimiento sin nombre`;
-    const sectionDesc = (formData.get(`section.${i}.description`) as string) ?? "";
+    const establishmentId = safeParsePositiveInt(formData.get(`section.${i}.establishmentId`));
+    const establishmentName = safeGetString(
+      formData.get(`section.${i}.establishmentName`),
+      `Establecimiento sin nombre`
+    );
+    const sectionDesc = safeGetString(formData.get(`section.${i}.description`), "");
 
     if (!establishmentId) {
       continue;
@@ -85,6 +93,10 @@ export async function POST(request: NextRequest) {
     for (let j = 0; j < MAX_DYNAMIC_REPORT_PHOTOS; j++) {
       const photo = formData.get(`section.${i}.photo.${j}`);
       if (photo && photo instanceof File && photo.size > 0) {
+        // Validate that file is an image
+        if (!photo.type.startsWith("image/")) {
+          continue;
+        }
         const arrayBuffer = await photo.arrayBuffer();
         photoBuffers.push(Buffer.from(arrayBuffer));
       }

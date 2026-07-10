@@ -1,5 +1,4 @@
 import { requireRole } from "@/lib/auth/require-role";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { DynamicReportForm } from "./_components/dynamic-report-form";
 
 export default async function DynamicReportPage() {
