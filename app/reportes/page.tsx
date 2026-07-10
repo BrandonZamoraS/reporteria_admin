@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ExportReportButton } from "@/app/reportes/_components/export-report-button";
 import { SendCompanyReportsForm } from "@/app/reportes/_components/send-company-reports-form";
 import { requireRole } from "@/lib/auth/require-role";
@@ -210,6 +211,41 @@ export default async function ReportsPage() {
           </section>
         );
       })}
+
+      {/* Dynamic report card (admin only) */}
+      {role === "admin" && (
+        <section className="rounded-[12px] border border-[var(--border)] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="max-w-3xl">
+              <div className="flex items-center gap-2">
+                <h2 className="text-[14px] font-semibold text-foreground">Reporte Dinamico</h2>
+                <div className="group relative">
+                  <span className="flex h-5 w-5 cursor-default items-center justify-center rounded-full border border-[var(--border)] text-[11px] font-bold text-[var(--muted)]">
+                    i
+                  </span>
+                  <div className="pointer-events-none absolute left-1/2 top-6 z-20 hidden w-72 -translate-x-1/2 rounded-[8px] border border-[var(--border)] bg-white px-3 py-2 shadow-md group-hover:block">
+                    <p className="text-[12px] text-[var(--muted)]">
+                      Crea un PDF personalizado seleccionando empresa, establecimientos con productos
+                      de esa empresa, y fotos cargadas desde tu dispositivo.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-1 text-[13px] text-[var(--muted)]">
+                Genera un PDF horizontal personalizado con establecimientos, fotos y descripciones
+                a medida.
+              </p>
+            </div>
+
+            <Link
+              href="/reportes/dinamico"
+              className="rounded-[8px] bg-foreground px-3 py-2 text-[13px] font-semibold text-white"
+            >
+              Generar
+            </Link>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
