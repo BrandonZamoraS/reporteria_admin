@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MAX_DYNAMIC_REPORT_PHOTOS } from "@/lib/reports/dynamic-report-types";
+import {
+  createDynamicReportFilename,
+  resolveDynamicReportName,
+} from "@/lib/reports/dynamic-report-layout";
 
 /* ── Types ────────────────────────────────────────────────── */
 type CompanyOption = {
@@ -84,6 +88,7 @@ function compressPhoto(file: File): Promise<Blob> {
 export function DynamicReportForm({ companies }: DynamicReportFormProps) {
   const [companyId, setCompanyId] = useState<number | null>(null);
   const [companyName, setCompanyName] = useState("");
+  const [reportName, setReportName] = useState("");
   const [reportDescription, setReportDescription] = useState("");
   const [sections, setSections] = useState<StoreSection[]>([]);
   const [loading, setLoading] = useState(false);
@@ -95,7 +100,6 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
   // Active add-store form state
   const [showAddStore, setShowAddStore] = useState(false);
   const [newEstablishmentId, setNewEstablishmentId] = useState<number | null>(null);
-  const [newEstablishmentName, setNewEstablishmentName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newPhotos, setNewPhotos] = useState<Blob[]>([]);
   const [compressing, setCompressing] = useState(false);
@@ -221,11 +225,10 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
 
     // Reset form
     setNewEstablishmentId(null);
-    setNewEstablishmentName("");
     setNewDescription("");
     setNewPhotos([]);
     setShowAddStore(false);
-  }, [newEstablishmentId, newEstablishmentName, newDescription, newPhotos, establishments]);
+  }, [newEstablishmentId, newDescription, newPhotos, establishments]);
 
   const removeSection = useCallback((index: number) => {
     setSections((prev) => prev.filter((_, i) => i !== index));
@@ -248,6 +251,7 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
       const formData = new FormData();
       formData.append("companyId", String(companyId));
       formData.append("companyName", companyName);
+      formData.append("reportName", resolveDynamicReportName(reportName));
       formData.append("description", reportDescription);
       formData.append("sectionCount", String(sections.length));
 
@@ -276,7 +280,7 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `reporte_dinamico_${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.download = createDynamicReportFilename(reportName);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -288,7 +292,7 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [companyId, companyName, reportDescription, sections]);
+  }, [companyId, companyName, reportDescription, reportName, sections]);
 
   /* ── Render ────────────────────────────────────────────── */
   return (
@@ -319,6 +323,16 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
 
       {/* Report description */}
       <section className="rounded-[12px] border border-[var(--border)] bg-white p-4">
+        <label className="mb-1.5 block text-[13px] font-semibold text-[var(--muted)]">
+          Nombre del reporte
+        </label>
+        <input
+          value={reportName}
+          onChange={(e) => setReportName(e.target.value)}
+          placeholder="Ej: Reporte de ventas de julio"
+          className="mb-4 h-10 w-full max-w-xl rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
+        />
+
         <label className="mb-1.5 block text-[13px] font-semibold text-[var(--muted)]">
           Descripcion del reporte
         </label>
@@ -398,8 +412,6 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
                     onChange={(e) => {
                       const id = e.target.value ? Number(e.target.value) : null;
                       setNewEstablishmentId(id);
-                      const selected = establishments.find((est) => est.id === id);
-                      setNewEstablishmentName(selected?.label ?? "");
                     }}
                     className="h-10 w-full max-w-md rounded-[8px] border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-foreground"
                   >
@@ -421,6 +433,7 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
                 <div className="mb-2 flex flex-wrap gap-2">
                   {newPhotos.map((photo, i) => (
                     <div key={i} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={photoPreviewUrls[i]}
                         alt={`Foto ${i + 1}`}
@@ -473,15 +486,14 @@ export function DynamicReportForm({ companies }: DynamicReportFormProps) {
                 >
                   Agregar
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddStore(false);
-                    setNewEstablishmentId(null);
-                    setNewEstablishmentName("");
-                    setNewDescription("");
-                    setNewPhotos([]);
-                  }}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddStore(false);
+                      setNewEstablishmentId(null);
+                      setNewDescription("");
+                      setNewPhotos([]);
+                    }}
                   className="rounded-[8px] border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-foreground"
                 >
                   Cancelar
