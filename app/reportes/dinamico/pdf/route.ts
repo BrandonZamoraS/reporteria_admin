@@ -4,6 +4,10 @@ import { getCurrentUserProfile } from "@/lib/auth/profile";
 import { logAuditAction } from "@/lib/audit/log";
 import { buildDynamicReportPdf, type DynamicReportSectionInput } from "@/lib/reports/dynamic-report-pdf";
 import { MAX_DYNAMIC_REPORT_PHOTOS } from "@/lib/reports/dynamic-report-types";
+import {
+  createDynamicReportFilename,
+  resolveDynamicReportName,
+} from "@/lib/reports/dynamic-report-layout";
 
 export const runtime = "nodejs";
 
@@ -59,6 +63,7 @@ export async function POST(request: NextRequest) {
 
   const companyId = safeParsePositiveInt(formData.get("companyId"));
   const companyName = safeGetString(formData.get("companyName"), "Sin empresa");
+  const reportName = resolveDynamicReportName(safeGetString(formData.get("reportName"), ""));
   const description = safeGetString(formData.get("description"), "");
   const sectionCount = safeParsePositiveInt(formData.get("sectionCount")) ?? 0;
 
@@ -120,7 +125,7 @@ export async function POST(request: NextRequest) {
   /* ── Generate PDF ────────────────────────────────────── */
   try {
     const pdfBuffer = await buildDynamicReportPdf({
-      title: "Reporte Dinamico",
+      title: reportName,
       companyName,
       description,
       generatedAt: formatNow(),
@@ -129,13 +134,13 @@ export async function POST(request: NextRequest) {
 
     await logAuditAction(supabase, {
       action: "EXPORT_PDF",
-      description: `Exporto PDF: Reporte Dinamico - ${companyName}`,
+      description: `Exporto PDF: ${reportName} - ${companyName}`,
     });
 
     return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="reporte_dinamico_${new Date().toISOString().slice(0, 10)}.pdf"`,
+        "Content-Disposition": `attachment; filename="${createDynamicReportFilename(reportName)}"`,
         "Cache-Control": "no-store",
       },
     });

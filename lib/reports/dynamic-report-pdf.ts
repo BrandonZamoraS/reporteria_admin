@@ -1,6 +1,10 @@
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
 import { MAX_DYNAMIC_REPORT_PHOTOS } from "@/lib/reports/dynamic-report-types";
+import {
+  fitFontSizeToHeight,
+  resolveDynamicReportName,
+} from "@/lib/reports/dynamic-report-layout";
 
 /* ── Brand colors (matching export/route.ts) ─────────────── */
 const BRAND = {
@@ -53,6 +57,8 @@ function drawText(
     width?: number;
     align?: "left" | "center" | "right";
     lineBreak?: boolean;
+    height?: number;
+    ellipsis?: boolean;
   } = {}
 ) {
   doc.save();
@@ -64,8 +70,73 @@ function drawText(
     width: opts.width,
     align: opts.align ?? "left",
     lineBreak: opts.lineBreak ?? true,
+    height: opts.height,
+    ellipsis: opts.ellipsis ?? false,
   });
   doc.restore();
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function measureTextHeight(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  font: string,
+  fontSize: number,
+  width: number
+): number {
+  doc.save();
+  doc.font(font).fontSize(fontSize);
+  const height = doc.heightOfString(text, { width, lineGap: 1.2 });
+  doc.restore();
+  return height;
+}
+
+function drawAdaptiveTextCard(
+  doc: PDFKit.PDFDocument,
+  options: {
+    x: number;
+    y: number;
+    width: number;
+    maxHeight: number;
+    minHeight?: number;
+    padding?: number;
+    backgroundColor: string;
+    textColor: string;
+    text: string;
+    font?: string;
+    baseFontSize: number;
+    minFontSize?: number;
+  }
+): number {
+  const padding = options.padding ?? 16;
+  const minHeight = options.minHeight ?? 48;
+  const font = options.font ?? "Helvetica";
+  const contentWidth = options.width - padding * 2;
+  const maxTextHeight = Math.max(1, options.maxHeight - padding * 2);
+  const fit = fitFontSizeToHeight({
+    text: options.text,
+    baseFontSize: options.baseFontSize,
+    minFontSize: options.minFontSize,
+    maxHeight: maxTextHeight,
+    measureHeight: (fontSize) => measureTextHeight(doc, options.text, font, fontSize, contentWidth),
+  });
+  const contentHeight = clamp(fit.textHeight, 1, maxTextHeight);
+  const boxHeight = clamp(contentHeight + padding * 2, minHeight, options.maxHeight);
+
+  doc.roundedRect(options.x, options.y, options.width, boxHeight, 12).fill(options.backgroundColor);
+  drawText(doc, options.text, options.x + padding, options.y + padding, {
+    font,
+    size: fit.fontSize,
+    color: options.textColor,
+    width: contentWidth,
+    height: boxHeight - padding * 2,
+    ellipsis: !fit.fits,
+  });
+
+  return boxHeight;
 }
 
 /* ── Cover page ───────────────────────────────────────────── */
@@ -74,28 +145,34 @@ function drawCover(doc: PDFKit.PDFDocument, options: DynamicReportPdfOptions) {
   const top = doc.page.margins.top;
   const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const usableHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom;
+  const reportName = resolveDynamicReportName(options.title);
 
   // Background
   doc.roundedRect(left, top, usableWidth, usableHeight, 22).fill("#F4F7F4");
 
   // Header banner
-  doc.roundedRect(left + 24, top + 24, usableWidth - 48, 120, 20).fill(BRAND.headerBg);
+  doc.roundedRect(left + 24, top + 24, usableWidth - 48, 104, 20).fill(BRAND.headerBg);
 
-  drawText(doc, options.title, left + 48, top + 52, {
-    font: "Helvetica-Bold",
-    size: 28,
-    color: BRAND.headerText,
-    width: usableWidth - 96,
+  const titleWidth = usableWidth - 96;
+  const titleFit = fitFontSizeToHeight({
+    text: reportName,
+    baseFontSize: 28,
+    minFontSize: 18,
+    maxHeight: 58,
+    measureHeight: (fontSize) => measureTextHeight(doc, reportName, "Helvetica-Bold", fontSize, titleWidth),
   });
-  drawText(doc, "Reporte dinamico personalizado", left + 48, top + 92, {
-    size: 13,
-    color: BRAND.accent,
-    width: usableWidth - 96,
+  drawText(doc, reportName, left + 48, top + 44, {
+    font: "Helvetica-Bold",
+    size: titleFit.fontSize,
+    color: BRAND.headerText,
+    width: titleWidth,
+    height: 58,
+    ellipsis: !titleFit.fits,
   });
 
   // Stats cards
-  const statY = top + 190;
-  const statWidth = (usableWidth - 120) / 3;
+  const statY = top + 148;
+  const statWidth = (usableWidth - 36) / 2;
   const totalPhotos = options.sections.reduce(
     (sum, section) => sum + section.photoBuffers.length,
     0
@@ -106,18 +183,15 @@ function drawCover(doc: PDFKit.PDFDocument, options: DynamicReportPdfOptions) {
     { label: "Establecimientos", value: String(options.sections.length) },
     { label: "Fotos", value: String(totalPhotos) },
     { label: "Generado", value: options.generatedAt },
-    { label: "Descripcion", value: options.description || "Sin descripcion" },
-    { label: "", value: "" },
   ];
 
   stats.forEach((stat, index) => {
-    if (!stat.label) return;
-    const column = index % 3;
-    const row = Math.floor(index / 3);
-    const x = left + 24 + column * (statWidth + 36);
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const x = left + 24 + column * (statWidth + 12);
     const y = statY + row * 108;
 
-    doc.roundedRect(x, y, statWidth, 88, 16).fill("#FFFFFF");
+    doc.roundedRect(x, y, statWidth, 84, 16).fill("#FFFFFF");
     drawText(doc, stat.label, x + 18, y + 16, {
       font: "Helvetica-Bold",
       size: 10,
@@ -126,10 +200,41 @@ function drawCover(doc: PDFKit.PDFDocument, options: DynamicReportPdfOptions) {
     });
     drawText(doc, stat.value, x + 18, y + 38, {
       font: "Helvetica-Bold",
-      size: stat.label === "Descripcion" ? 10 : 16,
+      size: 16,
       color: BRAND.text,
       width: statWidth - 36,
     });
+  });
+
+  const descriptionText = options.description.trim() || "Sin descripción";
+  const descriptionY = statY + 216;
+  const descriptionMaxHeight = Math.max(84, usableHeight - (descriptionY - top) - 12);
+  const descriptionWidth = usableWidth - 48;
+  const descriptionBodyMaxHeight = Math.max(1, descriptionMaxHeight - 58);
+  const descriptionBodyFit = fitFontSizeToHeight({
+    text: descriptionText,
+    baseFontSize: 10,
+    minFontSize: 8,
+    maxHeight: descriptionBodyMaxHeight,
+    measureHeight: (fontSize) =>
+      measureTextHeight(doc, descriptionText, "Helvetica", fontSize, descriptionWidth - 36),
+  });
+  const descriptionBoxHeight = clamp(descriptionBodyFit.textHeight + 58, 84, descriptionMaxHeight);
+
+  doc.roundedRect(left + 24, descriptionY, descriptionWidth, descriptionBoxHeight, 16).fill("#FFFFFF");
+  drawText(doc, "Descripción del reporte", left + 42, descriptionY + 16, {
+    font: "Helvetica-Bold",
+    size: 10,
+    color: BRAND.muted,
+    width: descriptionWidth - 36,
+  });
+  drawText(doc, descriptionText, left + 42, descriptionY + 36, {
+    font: "Helvetica",
+    size: descriptionBodyFit.fontSize,
+    color: BRAND.text,
+    width: descriptionWidth - 36,
+    height: descriptionBoxHeight - 52,
+    ellipsis: !descriptionBodyFit.fits,
   });
 }
 
@@ -196,13 +301,20 @@ async function drawStorePage(
   // Description
   let cursorY = contentTop;
   if (section.description.trim()) {
-    const descHeight = Math.min(40, remainingHeight * 0.1);
-    doc.roundedRect(left, cursorY, usableWidth, descHeight, 8).fill("#E8EFEA");
-    drawText(doc, section.description, left + 12, cursorY + 8, {
+    const descHeightMax = Math.min(132, Math.max(56, remainingHeight * 0.3));
+    const descHeight = drawAdaptiveTextCard(doc, {
+      x: left,
+      y: cursorY,
+      width: usableWidth,
+      maxHeight: descHeightMax,
+      minHeight: 56,
+      padding: 12,
+      backgroundColor: "#E8EFEA",
+      textColor: BRAND.text,
+      text: section.description.trim(),
       font: "Helvetica",
-      size: 9,
-      color: BRAND.text,
-      width: usableWidth - 24,
+      baseFontSize: 9,
+      minFontSize: 8,
     });
     cursorY += descHeight + 10;
   }
@@ -268,9 +380,10 @@ function drawFooter(doc: PDFKit.PDFDocument, reportName: string) {
   for (let i = 0; i < totalPages; i++) {
     doc.switchToPage(i);
     const bottom = doc.page.height - 20;
+    const footerText = `${reportName}  -  Pagina ${i + 1} de ${totalPages}  -  Reporteria`;
     drawText(
       doc,
-      `${reportName}  -  Pagina ${i + 1} de ${totalPages}  -  Reporteria`,
+      footerText,
       doc.page.margins.left,
       bottom,
       {
@@ -278,7 +391,10 @@ function drawFooter(doc: PDFKit.PDFDocument, reportName: string) {
         size: 7,
         color: BRAND.muted,
         width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+        height: 8,
         align: "center",
+        lineBreak: false,
+        ellipsis: true,
       }
     );
   }
@@ -288,13 +404,14 @@ function drawFooter(doc: PDFKit.PDFDocument, reportName: string) {
 export async function buildDynamicReportPdf(
   options: DynamicReportPdfOptions
 ): Promise<Buffer> {
+  const reportName = resolveDynamicReportName(options.title);
   const doc = new PDFDocument({
     size: "A4",
     layout: "landscape",
     margins: { top: 26, right: 30, bottom: 30, left: 30 },
     compress: true,
     bufferPages: true,
-    info: { Title: options.title, Creator: "Reporteria" },
+    info: { Title: reportName, Creator: "Reporteria" },
   });
 
   const bufferPromise = collectPdf(doc);
@@ -306,11 +423,11 @@ export async function buildDynamicReportPdf(
   const storePages = options.sections;
   for (let i = 0; i < storePages.length; i++) {
     doc.addPage();
-    await drawStorePage(doc, storePages[i], i + 1, storePages.length, options.title);
+    await drawStorePage(doc, storePages[i], i + 1, storePages.length, reportName);
   }
 
   // Footer
-  drawFooter(doc, options.title);
+  drawFooter(doc, reportName);
 
   doc.end();
   return bufferPromise;
