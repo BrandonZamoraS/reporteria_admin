@@ -46,10 +46,14 @@ const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function createStorageAdminClient() {
-  const { url } = getSupabaseEnv();
-  return createClient(url, getSupabaseServiceRoleKey(), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  try {
+    const { url } = getSupabaseEnv();
+    return createClient(url, getSupabaseServiceRoleKey(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  } catch {
+    return null;
+  }
 }
 
 function extractStoragePathFromUrl(photoUrl: string): string | null {
@@ -73,6 +77,7 @@ async function removeProductPhotoByUrl(photoUrl: string): Promise<boolean> {
   const path = extractStoragePathFromUrl(photoUrl);
   if (!path) return true; // nothing to delete
   const storage = createStorageAdminClient();
+  if (!storage) return false;
   const { error } = await storage.storage.from(PRODUCT_PHOTO_BUCKET).remove([path]);
   return !error;
 }
@@ -100,6 +105,10 @@ async function uploadProductPhoto(
   const path = `products/${productId}/${crypto.randomUUID()}.${ext || "bin"}`;
 
   const storage = createStorageAdminClient();
+  if (!storage) {
+    return { error: "Configuración de almacenamiento no disponible. Contacta al administrador." };
+  }
+
   const { error } = await storage.storage.from(PRODUCT_PHOTO_BUCKET).upload(path, file, {
     contentType: file.type,
     upsert: false,
