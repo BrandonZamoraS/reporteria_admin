@@ -1,0 +1,49 @@
+schema: spec-driven
+
+context: |
+  Project: reporteria_admin
+  Stack: Next.js 16.1.6, React 19.2.3, TypeScript 5, Tailwind CSS 4, Supabase (@supabase/ssr, @supabase/supabase-js), Playwright, ESLint 9
+  Architecture: Next.js App Router with mixed Server Components, client components, server actions, and route handlers; proxy-based auth gating; Supabase-backed data layer
+  Testing: Playwright E2E/regression suite under tests/, plus repo scripts for focused suites (auth, modules, edge-cases, ux)
+  Style: strict TypeScript, app/ feature folders, "use client" only where needed, Spanish product/domain copy, Tailwind utility-first styling
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Document Next.js RSC/client boundaries explicitly
+    - Call out proxy/auth implications for protected routes
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    - Follow existing Next.js App Router patterns
+    - Prefer server actions and route handlers already established in the codebase
+    - strict_tdd: true
+    - test_command: npm run test
+  verify:
+    test_command: npm run test
+    build_command: npm run build
+    lint_command: npm run lint
+    typecheck_command: npx tsc --noEmit
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
+
+testing:
+  strict_tdd: true
+  runner: playwright
+  layers:
+    - e2e/regression
+    - auth
+    - modules
+    - edge-cases
+    - ux
+  commands:
+    test: npm run test
+    build: npm run build
+    lint: npm run lint
+    typecheck: npx tsc --noEmit

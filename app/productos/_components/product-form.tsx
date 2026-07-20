@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AdaptiveSelect } from "@/app/_components/adaptive-select";
 import type { ProductFormState } from "@/app/productos/actions";
@@ -16,6 +17,7 @@ type Product = {
   name: string;
   company_id: number;
   is_active: boolean;
+  photo_url?: string | null;
 };
 
 type CompanyOption = {
@@ -37,6 +39,14 @@ type ProductFormProps = {
 };
 
 const INITIAL_STATE: ProductFormState = { error: null };
+const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function ProductForm({
   mode,
@@ -50,8 +60,51 @@ export function ProductForm({
   const [selectedEstablishmentIds, setSelectedEstablishmentIds] = useState(
     initialSelectedEstablishmentIds
   );
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (state.error) toast.error(state.error); }, [state]);
+  
+  // Cleanup blob URLs to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (photoPreview?.startsWith('blob:')) {
+        URL.revokeObjectURL(photoPreview);
+      }
+    };
+  }, [photoPreview]);
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setPhotoError(null);
+    const file = e.target.files?.[0];
+    if (!file) {
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
+      setPhotoPreview(null);
+      return;
+    }
+
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      setPhotoError("Solo se permiten imagenes JPG, PNG o WEBP.");
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
+      setPhotoPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (file.size > MAX_PHOTO_SIZE) {
+      setPhotoError(`La imagen supera los 5MB (${formatFileSize(file.size)}).`);
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
+      setPhotoPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    // Revoke previous blob URL before creating new one
+    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
+    const url = URL.createObjectURL(file);
+    setPhotoPreview(url);
+  }
 
   return (
     <form action={formAction} className="rounded-[12px] border border-[var(--border)] bg-white p-4">
@@ -126,6 +179,61 @@ export function ProductForm({
               <option value="inactive">Inactivo</option>
             </select>
           </label>
+        </div>
+
+        {/* Photo upload section */}
+        <div className="rounded-[8px] border border-[var(--border)] p-3">
+          <span className="mb-1.5 block text-[12px] font-semibold text-[var(--muted)]">
+            Foto del producto
+          </span>
+
+          <div className="flex flex-wrap items-start gap-3">
+            {/* Current photo or new preview */}
+            {(mode === "edit" && product?.photo_url && !photoPreview) ? (
+              <div
+                data-testid="photo-preview"
+                className="relative h-20 w-20 overflow-hidden rounded-[8px] border border-[var(--border)]"
+              >
+                <Image
+                  src={product.photo_url}
+                  alt="Foto del producto"
+                  fill
+                  className="object-cover"
+                  sizes="80px"
+                />
+              </div>
+            ) : photoPreview ? (
+              <div
+                data-testid="photo-preview"
+                className="relative h-20 w-20 overflow-hidden rounded-[8px] border border-[var(--border)]"
+              >
+                <Image
+                  src={photoPreview}
+                  alt="Vista previa de la foto"
+                  fill
+                  className="object-cover"
+                  sizes="80px"
+                />
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-1">
+              <input
+                ref={fileInputRef}
+                type="file"
+                name="photo"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handlePhotoChange}
+                className="text-[13px] text-[var(--muted)] file:mr-3 file:rounded-[6px] file:border file:border-[var(--border)] file:bg-white file:px-3 file:py-1.5 file:text-[12px] file:font-semibold file:text-foreground"
+              />
+              <p className="text-[11px] text-[var(--muted)]">
+                JPG, PNG o WEBP. Maximo 5MB.
+              </p>
+              {photoError ? (
+                <p className="text-[12px] font-medium text-[#9B1C1C]">{photoError}</p>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
