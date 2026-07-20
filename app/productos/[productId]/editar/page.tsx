@@ -19,7 +19,7 @@ export default async function EditProductPage({ params }: PageProps) {
   const [productResult, companiesResult, establishmentsResult, selectedRowsResult] = await Promise.all([
     supabase
       .from("product")
-      .select("product_id, sku, name, company_id, is_active")
+      .select("product_id, sku, name, company_id, is_active, photo_url")
       .eq("product_id", parsedProductId)
       .maybeSingle(),
     supabase

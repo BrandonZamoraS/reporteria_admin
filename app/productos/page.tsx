@@ -1,6 +1,8 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ProductDeleteButton } from "@/app/productos/_components/product-delete-button";
 import { ProductFilters } from "@/app/productos/_components/product-filters";
+import { ProductPhotoPlaceholder } from "@/app/productos/_components/product-photo-placeholder";
 import { requireRole } from "@/lib/auth/require-role";
 
 type PageProps = {
@@ -84,7 +86,7 @@ export default async function ProductsListPage({ searchParams }: PageProps) {
 
   let dataQuery = supabase
     .from("product")
-    .select("product_id, sku, name, is_active, company:company_id(name)")
+    .select("product_id, sku, name, is_active, photo_url, company:company_id(name)")
     .order("product_id", { ascending: false });
 
   let countQuery = supabase.from("product").select("product_id", { count: "exact", head: true });
@@ -169,7 +171,8 @@ export default async function ProductsListPage({ searchParams }: PageProps) {
       </div>
 
       <section className="overflow-hidden rounded-[12px] border border-[var(--border)] bg-white">
-        <div className="hidden bg-[#5A7A84] px-4 py-3 text-[12px] font-semibold text-white md:grid md:grid-cols-[0.8fr_1.2fr_1.2fr_0.7fr_0.8fr] md:gap-3">
+        <div className="hidden bg-[#5A7A84] px-4 py-3 text-[12px] font-semibold text-white md:grid md:grid-cols-[0.5fr_0.8fr_1.2fr_1.2fr_0.7fr_0.8fr] md:gap-3">
+          <p>Foto</p>
           <p>SKU</p>
           <p>Nombre</p>
           <p>Empresa</p>
@@ -200,8 +203,26 @@ export default async function ProductsListPage({ searchParams }: PageProps) {
               return (
                 <article
                   key={product.product_id}
-                  className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[0.8fr_1.2fr_1.2fr_0.7fr_0.8fr] md:items-center md:gap-3"
+                  className="border-t border-[var(--border)] px-4 py-3 first:border-t-0 md:grid md:grid-cols-[0.5fr_0.8fr_1.2fr_1.2fr_0.7fr_0.8fr] md:items-center md:gap-3"
                 >
+                  <div className="hidden md:block">
+                    {product.photo_url ? (
+                      <Link href={`/productos/${product.product_id}`}>
+                        <div className="relative h-10 w-10 overflow-hidden rounded-[6px] border border-[var(--border)]">
+                          <Image
+                            src={product.photo_url}
+                            alt={product.name}
+                            fill
+                            className="object-cover"
+                            sizes="40px"
+                          />
+                        </div>
+                      </Link>
+                    ) : (
+                      <ProductPhotoPlaceholder size="sm" />
+                    )}
+                  </div>
+
                   <div>
                     <p className="text-[12px] font-semibold text-[var(--muted)] md:hidden">SKU</p>
                     <p className="text-[13px] text-[#5A7984]">{product.sku}</p>
