@@ -46,10 +46,14 @@ const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function createStorageAdminClient() {
-  const { url } = getSupabaseEnv();
-  return createClient(url, getSupabaseServiceRoleKey(), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  try {
+    const { url } = getSupabaseEnv();
+    return createClient(url, getSupabaseServiceRoleKey(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  } catch {
+    return null;
+  }
 }
 
 function extractStoragePathFromUrl(photoUrl: string): string | null {
@@ -73,6 +77,7 @@ async function removeProductPhotoByUrl(photoUrl: string): Promise<boolean> {
   const path = extractStoragePathFromUrl(photoUrl);
   if (!path) return true; // nothing to delete
   const storage = createStorageAdminClient();
+  if (!storage) return false;
   const { error } = await storage.storage.from(PRODUCT_PHOTO_BUCKET).remove([path]);
   return !error;
 }
@@ -100,12 +105,24 @@ async function uploadProductPhoto(
   const path = `products/${productId}/${crypto.randomUUID()}.${ext || "bin"}`;
 
   const storage = createStorageAdminClient();
-  const { error } = await storage.storage.from(PRODUCT_PHOTO_BUCKET).upload(path, file, {
+  if (!storage) {
+    console.error("[uploadProductPhoto] Storage admin client is null");
+    return { error: "Configuración de almacenamiento no disponible. Contacta al administrador." };
+  }
+
+  console.log("[uploadProductPhoto] Attempting upload:", { productId, path, fileType: file.type, fileSize: file.size });
+
+  const { data, error } = await storage.storage.from(PRODUCT_PHOTO_BUCKET).upload(path, file, {
     contentType: file.type,
     upsert: false,
   });
 
-  if (error) return { error: "No se pudo subir la foto del producto." };
+  if (error) {
+    console.error("[uploadProductPhoto] Upload failed:", error);
+    return { error: `No se pudo subir la foto del producto: ${error.message}` };
+  }
+
+  console.log("[uploadProductPhoto] Upload successful:", data);
 
   const { url: supabaseUrl } = getSupabaseEnv();
   const photoUrl = `${supabaseUrl}/storage/v1/object/public/${PRODUCT_PHOTO_BUCKET}/${path}`;
@@ -281,6 +298,7 @@ export async function updateProductAction(
   _prevState: ProductFormState,
   formData: FormData
 ): Promise<ProductFormState> {
+  console.log("[updateProductAction] Starting update");
   const productId = Number(formData.get("productId"));
   const sku = String(formData.get("sku") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
@@ -288,6 +306,8 @@ export async function updateProductAction(
   const establishmentIds = parseEstablishmentIds(formData);
   const isActive = parseIsActive(formData.get("status"));
   const photoFile = formData.get("photo") as File | null;
+
+  console.log("[updateProductAction] Parsed data:", { productId, sku, name, companyId, isActive, hasPhoto: !!photoFile, photoSize: photoFile?.size });
 
   if (!productId || Number.isNaN(productId)) {
     return { error: "Producto invalido." };
@@ -307,6 +327,7 @@ export async function updateProductAction(
 
   const context = await getAuthorizedProductClient();
   if ("error" in context) {
+    console.error("[updateProductAction] Auth error:", context.error);
     return { error: context.error };
   }
 
@@ -321,6 +342,7 @@ export async function updateProductAction(
     return { error: "Alguno de los establecimientos seleccionados no existe." };
   }
 
+  console.log("[updateProductAction] Updating product in DB");
   const { error } = await supabase
     .from("product")
     .update({
@@ -332,12 +354,14 @@ export async function updateProductAction(
     .eq("product_id", productId);
 
   if (error) {
+    console.error("[updateProductAction] DB update failed:", error);
     return {
       error: "No se pudo actualizar el producto. Verifica SKU/empresa e intenta nuevamente. (PROD-UPD-01)",
     };
   }
 
   if (photoFile && photoFile.size > 0) {
+    console.log("[updateProductAction] Processing photo upload");
     // Fetch current photo_url to clean up old photo
     const { data: currentProduct } = await supabase
       .from("product")
@@ -347,29 +371,35 @@ export async function updateProductAction(
 
     const uploadResult = await uploadProductPhoto(productId, photoFile);
     if ("error" in uploadResult) {
+      console.error("[updateProductAction] Photo upload failed:", uploadResult.error);
       return { error: uploadResult.error };
     }
 
+    console.log("[updateProductAction] Updating photo_url in DB");
     const { error: photoUpdateError } = await supabase
       .from("product")
       .update({ photo_url: uploadResult.url })
       .eq("product_id", productId);
 
     if (photoUpdateError) {
+      console.error("[updateProductAction] Photo URL update failed:", photoUpdateError);
       return { error: "Los datos se actualizaron, pero no se pudo guardar la foto." };
     }
 
     // Clean up old photo if it existed
     if (currentProduct?.photo_url) {
+      console.log("[updateProductAction] Removing old photo");
       await removeProductPhotoByUrl(currentProduct.photo_url);
     }
   }
 
   const syncResult = await syncProductEstablishments(supabase, productId, establishmentIds);
   if (syncResult.error) {
+    console.error("[updateProductAction] Establishment sync failed:", syncResult.error);
     return { error: syncResult.error };
   }
 
+  console.log("[updateProductAction] Update successful, redirecting");
   revalidatePath("/productos");
   revalidatePath(`/productos/${productId}/editar`);
   redirect("/productos");
