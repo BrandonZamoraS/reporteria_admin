@@ -39,13 +39,70 @@ type ProductFormProps = {
 };
 
 const INITIAL_STATE: ProductFormState = { error: null };
-const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB (original)
+const MAX_COMPRESSED_SIZE = 800 * 1024; // 800KB (target after compression)
+const MAX_DIMENSION = 1200; // Max width/height in pixels
 const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function compressImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    img.onload = () => {
+      // Calculate new dimensions
+      let { width, height } = img;
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = (height / width) * MAX_DIMENSION;
+          width = MAX_DIMENSION;
+        } else {
+          width = (width / height) * MAX_DIMENSION;
+          height = MAX_DIMENSION;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      if (!ctx) {
+        reject(new Error("No se pudo crear el contexto del canvas"));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Convert to blob with compression
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("No se pudo comprimir la imagen"));
+            return;
+          }
+
+          // Create compressed file
+          const compressedFile = new File([blob], file.name, {
+            type: "image/jpeg",
+            lastModified: Date.now(),
+          });
+
+          resolve(compressedFile);
+        },
+        "image/jpeg",
+        0.8 // 80% quality
+      );
+    };
+
+    img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+    img.src = URL.createObjectURL(file);
+  });
 }
 
 export function ProductForm({
@@ -62,6 +119,7 @@ export function ProductForm({
   );
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [compressedPhoto, setCompressedPhoto] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (state.error) toast.error(state.error); }, [state]);
@@ -75,8 +133,9 @@ export function ProductForm({
     };
   }, [photoPreview]);
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     setPhotoError(null);
+    setCompressedPhoto(null);
     const file = e.target.files?.[0];
     if (!file) {
       if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
@@ -100,14 +159,37 @@ export function ProductForm({
       return;
     }
 
-    // Revoke previous blob URL before creating new one
-    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
-    const url = URL.createObjectURL(file);
-    setPhotoPreview(url);
+    try {
+      // Compress the image
+      const compressed = await compressImage(file);
+      setCompressedPhoto(compressed);
+      
+      // Revoke previous blob URL before creating new one
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
+      const url = URL.createObjectURL(compressed);
+      setPhotoPreview(url);
+      
+      console.log(`[ProductForm] Compressed ${formatFileSize(file.size)} → ${formatFileSize(compressed.size)}`);
+    } catch (err) {
+      console.error("[ProductForm] Compression failed:", err);
+      setPhotoError("No se pudo procesar la imagen. Intenta con otra.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
-    <form action={formAction} className="rounded-[12px] border border-[var(--border)] bg-white p-4">
+    <form action={formAction} onSubmit={async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.currentTarget);
+      
+      // Replace the original file with compressed version if available
+      if (compressedPhoto) {
+        formData.set("photo", compressedPhoto);
+      }
+      
+      // Call the action with modified FormData
+      await formAction(formData);
+    }} className="rounded-[12px] border border-[var(--border)] bg-white p-4">
       {mode === "edit" ? <input type="hidden" name="productId" value={product?.product_id} /> : null}
       {mode === "edit"
         ? selectedEstablishmentIds.map((establishmentId) => (
