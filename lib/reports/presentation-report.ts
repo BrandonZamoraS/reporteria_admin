@@ -531,8 +531,7 @@ export async function buildPresentationReportPdf(
 ): Promise<Buffer> {
   const pages = paginatePresentationPhotoCards(cards);
   const doc = new PDFDocument({
-    size: "A4",
-    layout: "landscape",
+    size: [842, 750],
     margins: { top: 26, right: 30, bottom: 24, left: 30 },
     compress: true,
     bufferPages: true,
