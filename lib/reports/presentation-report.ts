@@ -4,6 +4,7 @@ import type { EvidenceRow, FlatRow } from "@/lib/reports/export-core";
 import { formatDateTime } from "@/lib/reports/export-core";
 
 export const MAX_PRESENTATION_PHOTOS_PER_PAGE = 6;
+export const MAX_PHOTOS_PER_GROUP = 3;
 
 export type PresentationPhotoCard = {
   establishmentId: number | null;
@@ -142,10 +143,16 @@ async function preparePresentationImage(card: PresentationPhotoCard): Promise<Pr
   }
 }
 
-function resolvePageGrid(photoCount: number) {
+function resolvePhotoGrid(photoCount: number) {
   if (photoCount <= 1) return { columns: 1, rows: 1 };
   if (photoCount === 2) return { columns: 2, rows: 1 };
-  if (photoCount <= 4) return { columns: 2, rows: 2 };
+  return { columns: 3, rows: 1 };
+}
+
+function resolvePageGrid(groupCount: number) {
+  if (groupCount <= 1) return { columns: 1, rows: 1 };
+  if (groupCount === 2) return { columns: 2, rows: 1 };
+  if (groupCount <= 4) return { columns: 2, rows: 2 };
   return { columns: 3, rows: 2 };
 }
 
@@ -177,7 +184,29 @@ export function groupPresentationCardsByRecord(cards: PresentationPhotoCard[]): 
     });
   }
 
-  return groups;
+  return splitOversizedGroups(groups);
+}
+
+function splitOversizedGroups(groups: PresentationRecordGroup[]): PresentationRecordGroup[] {
+  const result: PresentationRecordGroup[] = [];
+
+  for (const group of groups) {
+    if (group.photos.length <= MAX_PHOTOS_PER_GROUP) {
+      result.push(group);
+      continue;
+    }
+
+    for (let i = 0; i < group.photos.length; i += MAX_PHOTOS_PER_GROUP) {
+      const slice = group.photos.slice(i, i + MAX_PHOTOS_PER_GROUP);
+      result.push({
+        ...group,
+        showRecordSummary: i === 0 ? group.showRecordSummary : false,
+        photos: slice,
+      });
+    }
+  }
+
+  return result;
 }
 
 function drawCardText(
@@ -273,7 +302,7 @@ async function drawPresentationGroup(params: {
   const imageAreaY = y + 56 + summaryHeight;
   const imageHeight = Math.max(72, height - (imageAreaY - y) - 34);
   const imageAreaWidth = width - padding * 2;
-  const imageGrid = resolvePageGrid(group.photos.length);
+  const imageGrid = resolvePhotoGrid(group.photos.length);
   const imageGap = 4;
   const slotWidth = (imageAreaWidth - imageGap * (imageGrid.columns - 1)) / imageGrid.columns;
   const slotHeight = (imageHeight - imageGap * (imageGrid.rows - 1)) / imageGrid.rows;
