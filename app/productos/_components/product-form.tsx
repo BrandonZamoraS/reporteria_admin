@@ -179,16 +179,17 @@ export function ProductForm({
 
   return (
     <form action={formAction} onSubmit={async (e) => {
-      e.preventDefault();
-      const formData = new FormData(e.currentTarget);
-      
-      // Replace the original file with compressed version if available
+      // If we have a compressed photo, we need to intercept and replace the file
       if (compressedPhoto) {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
         formData.set("photo", compressedPhoto);
+        
+        // Call the action - Next.js will handle the redirect
+        formAction(formData);
+        return;
       }
-      
-      // Call the action with modified FormData
-      await formAction(formData);
+      // Otherwise, let the form submit normally
     }} className="rounded-[12px] border border-[var(--border)] bg-white p-4">
       {mode === "edit" ? <input type="hidden" name="productId" value={product?.product_id} /> : null}
       {mode === "edit"
